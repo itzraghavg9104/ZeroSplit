@@ -1,0 +1,5 @@
+{
+  "name": "FairSplit",
+  "description": "A minimalist, mobile-first bill splitting application that handles unequal splits and minimizes group debts efficiently.",
+  "requestFramePermissions": []
+}
