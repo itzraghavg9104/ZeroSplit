@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-    const { user, loading } = useAuth();
+    const { user, firebaseUser, loading } = useAuth();
     const router = useRouter();
     const pathname = usePathname();
     const [isChecking, setIsChecking] = useState(true);
@@ -13,8 +13,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         if (loading) return;
 
-        // Public paths that don't require onboarding
-        const publicPaths = ["/", "/login", "/signup", "/onboarding"];
+        // Public paths that don't require onboarding OR verification
+        const publicPaths = ["/", "/login", "/signup", "/onboarding", "/verify-email", "/forgot-password"];
         if (publicPaths.includes(pathname)) {
             setIsChecking(false);
             return;
@@ -25,7 +25,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             return;
         }
 
-        // Check if profile is complete (Name & Username are absolute minimums)
+        // 1. Check Email Verification First
+        if (firebaseUser && !firebaseUser.emailVerified) {
+            router.replace("/verify-email");
+            return;
+        }
+
+        // 2. Check Profile Completion
         const isProfileComplete = user.firstName && user.username;
 
         if (!isProfileComplete) {
@@ -33,7 +39,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         } else {
             setIsChecking(false);
         }
-    }, [user, loading, pathname, router]);
+    }, [user, firebaseUser, loading, pathname, router]);
 
     if (loading || isChecking) {
         return (

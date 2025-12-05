@@ -84,15 +84,25 @@ export default function OnboardingPage() {
             backgroundColor: "var(--color-background)",
             color: "var(--color-foreground)",
             display: "flex",
-            flexDirection: "column" as const,
-            padding: "24px",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+        },
+        container: {
+            width: "100%",
+            maxWidth: "440px",
+            backgroundColor: "var(--color-card)",
+            borderRadius: "24px",
+            padding: "32px",
+            boxShadow: "0 10px 40px rgba(0, 0, 0, 0.05)",
+            border: "1px solid var(--color-border)",
         },
         header: {
             marginBottom: "32px",
-            marginTop: "24px",
+            textAlign: "center" as const,
         },
         title: {
-            fontSize: "28px",
+            fontSize: "24px",
             fontWeight: 800,
             marginBottom: "8px",
             background: "linear-gradient(135deg, #0095F6 0%, #00D4AA 100%)",
@@ -101,10 +111,10 @@ export default function OnboardingPage() {
         },
         subtitle: {
             color: "var(--color-muted)",
-            fontSize: "16px",
+            fontSize: "15px",
+            lineHeight: "1.5",
         },
         form: {
-            flex: 1,
             display: "flex",
             flexDirection: "column" as const,
             gap: "20px",
@@ -118,16 +128,18 @@ export default function OnboardingPage() {
             fontSize: "14px",
             fontWeight: 600,
             color: "var(--color-foreground)",
+            marginLeft: "4px",
         },
         input: {
             width: "100%",
-            padding: "16px",
-            fontSize: "16px",
-            backgroundColor: "var(--color-card)",
+            padding: "14px 16px",
+            fontSize: "15px",
+            backgroundColor: "var(--color-background)", // Contrast against card
             border: "1px solid var(--color-border)",
             borderRadius: "12px",
             color: "var(--color-foreground)",
             outline: "none",
+            transition: "all 0.2s",
         },
         button: {
             width: "100%",
@@ -139,25 +151,27 @@ export default function OnboardingPage() {
             fontSize: "16px",
             fontWeight: 700,
             cursor: "pointer",
-            marginTop: "auto",
+            marginTop: "12px",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            gap: "8px"
+            gap: "8px",
+            transition: "opacity 0.2s",
         },
         skipBtn: {
             backgroundColor: "transparent",
             color: "var(--color-muted)",
             fontWeight: 600,
-            marginTop: "16px",
+            marginTop: "8px",
         },
         progress: {
             display: "flex",
             gap: "8px",
             marginBottom: "32px",
+            justifyContent: "center",
         },
         progressStep: {
-            flex: 1,
+            width: "40px",
             height: "4px",
             borderRadius: "2px",
             backgroundColor: "var(--color-border)",
@@ -169,101 +183,103 @@ export default function OnboardingPage() {
 
     return (
         <div style={styles.page}>
-            <div style={styles.progress}>
-                <div style={{ ...styles.progressStep, ...styles.stepActive }} />
-                <div style={{ ...styles.progressStep, ...(step === 2 ? styles.stepActive : {}) }} />
-            </div>
+            <div style={styles.container}>
+                <div style={styles.progress}>
+                    <div style={{ ...styles.progressStep, ...styles.stepActive }} />
+                    <div style={{ ...styles.progressStep, ...(step === 2 ? styles.stepActive : {}) }} />
+                </div>
 
-            <div style={styles.header}>
-                <h1 style={styles.title}>
-                    {step === 1 ? "Let's get you set up" : "Add Payment Details"}
-                </h1>
-                <p style={styles.subtitle}>
-                    {step === 1 ? "Create your profile to start splitting bills." : "Add details to receive money directly."}
-                </p>
-            </div>
+                <div style={styles.header}>
+                    <h1 style={styles.title}>
+                        {step === 1 ? "Let's get you set up" : "Add Payment Details"}
+                    </h1>
+                    <p style={styles.subtitle}>
+                        {step === 1 ? "Create your profile to start splitting bills." : "Add details to receive money directly."}
+                    </p>
+                </div>
 
-            {step === 1 ? (
-                <form onSubmit={handleStep1Submit} style={styles.form}>
-                    <div style={styles.inputGroup}>
-                        <label style={styles.label}>First Name</label>
-                        <input
-                            style={styles.input}
-                            placeholder="e.g. Raghav"
-                            value={firstName}
-                            onChange={e => setFirstName(e.target.value)}
-                            required
-                        />
-                    </div>
-                    <div style={styles.inputGroup}>
-                        <label style={styles.label}>Last Name</label>
-                        <input
-                            style={styles.input}
-                            placeholder="e.g. Gupta"
-                            value={lastName}
-                            onChange={e => setLastName(e.target.value)}
-                        />
-                    </div>
-                    <div style={styles.inputGroup}>
-                        <label style={styles.label}>Username</label>
-                        <input
-                            style={styles.input}
-                            placeholder="@username"
-                            value={username}
-                            onChange={e => setUsername(e.target.value)}
-                            required
-                        />
-                    </div>
-                    <button type="submit" style={styles.button} disabled={loading}>
-                        {loading ? "Saving..." : "Next Step"} <ChevronRight size={20} />
-                    </button>
-                </form>
-            ) : (
-                <form onSubmit={handleStep2Submit} style={styles.form}>
-                    <div style={styles.inputGroup}>
-                        <label style={styles.label}>UPI ID <span style={{ fontWeight: 400, color: "var(--color-muted)" }}>(Recommended)</span></label>
-                        <input
-                            style={styles.input}
-                            placeholder="username@upi"
-                            value={upiId}
-                            onChange={e => setUpiId(e.target.value)}
-                        />
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px", margin: "12px 0" }}>
-                        <div style={{ flex: 1, height: "1px", backgroundColor: "var(--color-border)" }} />
-                        <span style={{ fontSize: "12px", color: "var(--color-muted)" }}>OR BANK DETAILS</span>
-                        <div style={{ flex: 1, height: "1px", backgroundColor: "var(--color-border)" }} />
-                    </div>
-                    <div style={styles.inputGroup}>
-                        <label style={styles.label}>Bank Account Number</label>
-                        <input
-                            style={styles.input}
-                            placeholder="XXXXXXXXXXXXXXXX"
-                            value={bankAccount}
-                            onChange={e => setBankAccount(e.target.value)}
-                            type="password"
-                        />
-                    </div>
-                    <div style={styles.inputGroup}>
-                        <label style={styles.label}>IFSC Code</label>
-                        <input
-                            style={styles.input}
-                            placeholder="SBIN000XXXX"
-                            value={ifsc}
-                            onChange={e => setIfsc(e.target.value.toUpperCase())}
-                        />
-                    </div>
-
-                    <div style={{ marginTop: "auto" }}>
+                {step === 1 ? (
+                    <form onSubmit={handleStep1Submit} style={styles.form}>
+                        <div style={styles.inputGroup}>
+                            <label style={styles.label}>First Name</label>
+                            <input
+                                style={styles.input}
+                                placeholder="e.g. Raghav"
+                                value={firstName}
+                                onChange={e => setFirstName(e.target.value)}
+                                required
+                            />
+                        </div>
+                        <div style={styles.inputGroup}>
+                            <label style={styles.label}>Last Name</label>
+                            <input
+                                style={styles.input}
+                                placeholder="e.g. Gupta"
+                                value={lastName}
+                                onChange={e => setLastName(e.target.value)}
+                            />
+                        </div>
+                        <div style={styles.inputGroup}>
+                            <label style={styles.label}>Username</label>
+                            <input
+                                style={styles.input}
+                                placeholder="@username"
+                                value={username}
+                                onChange={e => setUsername(e.target.value)}
+                                required
+                            />
+                        </div>
                         <button type="submit" style={styles.button} disabled={loading}>
-                            {loading ? "Finishing..." : "Complete Setup"} <ShieldCheck size={20} />
+                            {loading ? "Saving..." : "Next Step"} <ChevronRight size={20} />
                         </button>
-                        <button type="button" onClick={handleSkip} style={{ ...styles.button, ...styles.skipBtn }}>
-                            Skip for now
-                        </button>
-                    </div>
-                </form>
-            )}
+                    </form>
+                ) : (
+                    <form onSubmit={handleStep2Submit} style={styles.form}>
+                        <div style={styles.inputGroup}>
+                            <label style={styles.label}>UPI ID <span style={{ fontWeight: 400, color: "var(--color-muted)" }}>(Recommended)</span></label>
+                            <input
+                                style={styles.input}
+                                placeholder="username@upi"
+                                value={upiId}
+                                onChange={e => setUpiId(e.target.value)}
+                            />
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px", margin: "4px 0" }}>
+                            <div style={{ flex: 1, height: "1px", backgroundColor: "var(--color-border)" }} />
+                            <span style={{ fontSize: "12px", color: "var(--color-muted)", fontWeight: 500 }}>OR</span>
+                            <div style={{ flex: 1, height: "1px", backgroundColor: "var(--color-border)" }} />
+                        </div>
+                        <div style={styles.inputGroup}>
+                            <label style={styles.label}>Bank Account Number</label>
+                            <input
+                                style={styles.input}
+                                placeholder="XXXXXXXXXXXXXXXX"
+                                value={bankAccount}
+                                onChange={e => setBankAccount(e.target.value)}
+                                type="password"
+                            />
+                        </div>
+                        <div style={styles.inputGroup}>
+                            <label style={styles.label}>IFSC Code</label>
+                            <input
+                                style={styles.input}
+                                placeholder="SBIN000XXXX"
+                                value={ifsc}
+                                onChange={e => setIfsc(e.target.value.toUpperCase())}
+                            />
+                        </div>
+
+                        <div>
+                            <button type="submit" style={styles.button} disabled={loading}>
+                                {loading ? "Finishing..." : "Complete Setup"} <ShieldCheck size={20} />
+                            </button>
+                            <button type="button" onClick={handleSkip} style={{ ...styles.button, ...styles.skipBtn }}>
+                                Skip for now
+                            </button>
+                        </div>
+                    </form>
+                )}
+            </div>
         </div>
     );
 }

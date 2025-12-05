@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
+import GroupActionModal from "../ui/GroupActionModal";
 
 const bottomNavItems = [
     { href: "/dashboard", label: "Home", icon: Home },
@@ -29,6 +30,7 @@ const sideNavItems = [
 
 export default function MobileNav() {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [showGroupModal, setShowGroupModal] = useState(false);
     const [isDesktop, setIsDesktop] = useState(false);
     const pathname = usePathname();
     const { resolvedTheme, setTheme, theme } = useTheme();
@@ -116,7 +118,7 @@ export default function MobileNav() {
                         src="/logoFull.png"
                         alt="ZeroSplit"
                         style={{
-                            height: "32px",
+                            height: "40px",
                             width: "auto",
                             filter: logoFilter,
                         }}
@@ -411,9 +413,9 @@ export default function MobileNav() {
                         // Center Plus Button
                         if (item.isCenter) {
                             return (
-                                <Link
+                                <div
                                     key={item.href}
-                                    href={item.href}
+                                    onClick={() => setShowGroupModal(true)}
                                     style={{
                                         display: "flex",
                                         flexDirection: "column",
@@ -421,6 +423,7 @@ export default function MobileNav() {
                                         justifyContent: "center",
                                         gap: "4px",
                                         minWidth: "60px",
+                                        cursor: "pointer",
                                     }}
                                 >
                                     <div
@@ -437,7 +440,7 @@ export default function MobileNav() {
                                     >
                                         <Plus size={20} color="var(--color-foreground)" strokeWidth={2} />
                                     </div>
-                                </Link>
+                                </div>
                             );
                         }
 
@@ -473,6 +476,11 @@ export default function MobileNav() {
 
             {/* Header Spacer */}
             <div style={{ height: "56px" }} />
+
+            <GroupActionModal
+                isOpen={showGroupModal}
+                onClose={() => setShowGroupModal(false)}
+            />
         </>
     );
 }

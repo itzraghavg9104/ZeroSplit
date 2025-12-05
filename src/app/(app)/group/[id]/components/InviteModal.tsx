@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Copy, Check, Search, Link2, UserPlus } from "lucide-react";
+import { X, Copy, Check, Search, Link2, UserPlus, Share2 } from "lucide-react";
 import { User, Invite, Group } from "@/types";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, addDoc, Timestamp } from "firebase/firestore";
@@ -33,11 +33,28 @@ export default function InviteModal({ isOpen, onClose, group, user, groupId }: I
         setTimeout(() => setCopied(false), 2000);
     };
 
-    const copyInviteCode = () => {
-        navigator.clipboard.writeText(group.inviteCode);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+    const handleShare = async () => {
+        const link = `${window.location.origin}/join/${group.inviteCode}`;
+        const title = `Join ${group.name} on ZeroSplit`;
+        const text = `${user.firstName} is inviting you to the group "${group.name}". Join using the link below to start splitting expenses fairly!`;
+
+        if (navigator.share) {
+            try {
+                await navigator.share({
+                    title,
+                    text,
+                    url: link,
+                });
+            } catch (error) {
+                console.error("Error sharing:", error);
+            }
+        } else {
+            // Fallback to copy if share not supported
+            copyInviteLink();
+            alert("Link copied to clipboard! (Sharing not supported on this device)");
+        }
     };
+
 
     const searchByUsername = async () => {
         if (!usernameSearch.trim()) return;
@@ -277,6 +294,36 @@ export default function InviteModal({ isOpen, onClose, group, user, groupId }: I
             fontWeight: 500,
             cursor: "pointer",
         },
+        actionBtn: {
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
+            padding: "14px",
+            backgroundColor: "#0095F6",
+            color: "white",
+            border: "none",
+            borderRadius: "12px",
+            fontSize: "15px",
+            fontWeight: 500,
+            cursor: "pointer",
+        },
+        actionBtnSecondary: {
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
+            padding: "14px",
+            backgroundColor: "var(--color-card)",
+            color: "var(--color-foreground)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "12px",
+            fontSize: "15px",
+            fontWeight: 500,
+            cursor: "pointer",
+        },
     };
 
     return (
@@ -290,27 +337,20 @@ export default function InviteModal({ isOpen, onClose, group, user, groupId }: I
                 </div>
 
                 <div style={styles.inviteSection}>
-                    <p style={styles.inviteLabel}>Share Invite Code</p>
-                    <div style={styles.inviteCode}>
-                        <span style={styles.codeText}>{group.inviteCode}</span>
-                        <button style={styles.copyBtn} onClick={copyInviteCode}>
-                            {copied ? <Check size={14} /> : <Copy size={14} />}
-                            {copied ? "Copied!" : "Copy"}
+                    <p style={styles.inviteLabel}>Invite via Link</p>
+                    <div style={{ display: "flex", gap: "12px" }}>
+                        <button style={styles.actionBtn} onClick={copyInviteLink}>
+                            {copied ? <Check size={20} /> : <Copy size={20} />}
+                            <span>{copied ? "Copied!" : "Copy Link"}</span>
+                        </button>
+                        <button style={styles.actionBtnSecondary} onClick={handleShare}>
+                            <Share2 size={20} />
+                            <span>Share</span>
                         </button>
                     </div>
-                </div>
-
-                <div style={styles.inviteSection}>
-                    <p style={styles.inviteLabel}>Share Link</p>
-                    <div style={styles.inviteCode}>
-                        <Link2 size={18} color="var(--color-muted)" />
-                        <span style={{ flex: 1, fontSize: "13px", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {window.location.origin}/join/{group.inviteCode}
-                        </span>
-                        <button style={styles.copyBtn} onClick={copyInviteLink}>
-                            {copied ? "Copied!" : "Copy"}
-                        </button>
-                    </div>
+                    <p style={{ marginTop: "12px", fontSize: "13px", color: "var(--color-muted)", textAlign: "center" }}>
+                        Code: <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{group.inviteCode}</span>
+                    </p>
                 </div>
 
                 <div style={styles.divider}>

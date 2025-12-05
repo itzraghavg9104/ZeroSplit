@@ -138,6 +138,7 @@ export default function ProfilePage() {
             width: "100px",
             height: "100px",
             borderRadius: "50%",
+            overflow: "hidden",
             background: "linear-gradient(135deg, #0095F6, #00D4AA)",
             display: "flex",
             alignItems: "center",
@@ -324,7 +325,7 @@ export default function ProfilePage() {
                             <img
                                 src={user.profilePicture}
                                 alt="Profile"
-                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }}
                             />
                         ) : (
                             user.firstName?.[0] || user.email?.[0]?.toUpperCase() || "U"

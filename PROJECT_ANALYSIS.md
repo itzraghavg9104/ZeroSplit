@@ -1,61 +1,157 @@
-# Project Analysis: ZeroSplit
+# ZeroSplit - Comprehensive Project Analysis
 
-## 1. Executive Summary
-ZeroSplit is a robust Progressive Web Application (PWA) built to solve the recurring problem of shared expense management. Unlike traditional split-wise clones, ZeroSplit focuses on a "Mobile-First" experience with high-quality UI/UX (Glassmorphism, Dark/Light modes) and seamless real-time synchronization. The primary goal is to minimize friction in adding expenses and settling debts.
-
-## 2. Core Architecture
-
-### Frontend Layer
-- **Framework**: Next.js 16 utilizing the App Router for simplified routing and layout management.
-- **State Management**: React Context (`AuthContext`, `ThemeContext`) handles global user state and preferences.
-- **Styling**: A hybrid approach using Tailwind CSS for layout utility and custom CSS (via `globals.css` and CSS modules) for complex animations (e.g., the DotGrid background).
-
-### Backend / Data Layer
-- **Firebase Firestore**: A NoSQL document database chosen for its flexibility and real-time capabilities (`onSnapshot`).
-  - **Data Model**:
-    - `users`: Stores profiles, preferences, and payment details (UPI/Bank).
-    - `groups`: Top-level collection for expense groups.
-    - `expenses`: Stored as a root collection or sub-collection (depending on query pattern), linked by `groupId`.
-    - `activities`: Tracks timeline events (Member added, Expense created).
-    - `invites`: Manages pending group invitations.
-- **Authentication**: Firebase Auth handles Email/Password sign-ins and session management.
-
-## 3. Key Modules & Logic
-
-### Settlement Algorithm (`src/utils/settlements.ts`)
-The core value proposition is calculating "Who owes Who".
-- **Logic**: It iterates through specific group expenses, calculating the net balance for each member (Paid - Share).
-- **Optimization**: It simplifies the debt graph to minimize the number of transactions required to reach zero balance.
-
-### Group Details Page (`src/app/(app)/group/[id]/page.tsx`)
-This is the most complex view in the application.
-- **Refactoring Strategy**: To manage complexity, modal interactions (Inviting members, Settling debts) were extracted into isolated components (`InviteModal`, `SettleModal`).
-- **Data Fetching**: Uses real-time listeners to ensure that if one user adds an expense, all other group members see it instantly without refreshing.
-
-### PWA Implementation
-- Uses `next-pwa` to generate a service worker.
-- **Install Flow**: Custom logic in the Landing Page captures the `beforeinstallprompt` event to present a custom "Install App" button, providing a native-app-like installation experience on supported browsers.
-
-## 4. Workflows
-
-### Onboarding
-`AppLayout` enforces a strict onboarding check. If a user is authenticated but lacks a `username` or `firstName`, they are redirected to `/onboarding`. This ensures data integrity across the app.
-
-### Expense & Settlement Flow
-1.  **Creation**: User creates an expense in a group.
-2.  **Calculation**: App recalculates balances locally and updates the database.
-3.  **Notification**: An activity log is generated.
-4.  **Settlement**: When a user pays back (via UPI deep link or cash), a special "Settlement" expense is recorded, neutralizing the balance.
-
-## 5. Security Analysis
-- **Firestore Rules**: Rules strictly enforce that users can only read/write data for groups they are members of.
-- **Environment Handling**: API keys are restricted to client-side usage via `NEXT_PUBLIC_` prefix, adhering to Firebase's security model.
-
-## 6. Future Roadmap
-- **Push Notifications**: Integrate FCM to alert users of new expenses.
-- **Interactive Charts**: Visual breakdown of spending habits in the Dashboard.
-- **Multi-currency Support**: Enhanced support for international trips.
+**Version**: 2.0.0
+**Last Updated**: December 2025
+**Maintainer**: Raghav Gupta
+**Contact**: contact.zerosplit@gmail.com
 
 ---
-**Maintained by:** Raghav Gupta
-**Contact:** contact.zerosplit@gmail.com
+
+## 1. Executive Summary
+
+**ZeroSplit** is a cutting-edge, "Mobile-First" Progressive Web Application (PWA) designed to revolutionize expense sharing. Unlike traditional split-wise clones that suffer from bloated UIs and slow synchronization, ZeroSplit prioritizes:
+- **Instant Speed**: Real-time data sync using Firestore listeners.
+- **Visual Excellence**: A high-end Glassmorphism aesthetic with dynamic, interactive backgrounds (DotGrid).
+- **Reduced Friction**: Simplified flows for adding expenses, settling debts, and onboarding new users.
+
+It is built on the bleeding edge of web technology, leveraging **Next.js 16** and **React 19** to deliver a near-native app experience on the web.
+
+---
+
+## 2. Technology Stack
+
+### Core Framework
+- **Next.js 16.0.7 (App Router)**: Utilizes the latest React Server Components (RSC) architecture for optimal hydration and SEO, while leveraging Client Components for rich interactivity.
+- **React 19.2.0**: Takes advantage of the latest React concurrent features and hooks.
+- **TypeScript 5**: Ensures full type safety across the entire codebase.
+
+### Styling & UI
+- **Tailwind CSS 4**: The latest engine for utility-first styling, providing instant build times and zero-runtime CSS generation.
+- **GSAP (GreenSock)**: Powers complex, high-performance animations, specifically the interactive `DotGrid` background.
+- **Lucide React**: Provides a consistent, modern icon set.
+- **Custom CSS**: Leveraging CSS Variables for theming (Dark/Light mode) and advanced glassmorphism effects (`backdrop-filter`, `mix-blend-mode`).
+
+### Backend & Data
+- **Firebase v12**:
+  - **Authentication**: Robust email/password and Google OAuth flows.
+  - **Firestore**: NoSQL database for real-time document storage.
+  - **Storage**: Cloudinary (via distinct API) for optimized image delivery.
+
+### Deployment & PWA
+- **Vercel**: Edge-optimized deployment.
+- **next-pwa**: Service worker generation for offline capabilities and "Add to Home Screen" support.
+
+---
+
+## 3. Architecture & Design Patterns
+
+### Frontend Architecture
+The application follows a **Domain-Driven Directory Structure** within the Next.js App Router:
+- `src/app/(auth)`: Enclosed route group for authentication pages (`login`, `signup`), sharing a common layout but isolated from the main app shell.
+- `src/app/(app)`: The restricted "Dashboard" area. Protected by a high-order `AppLayout` that strictly enforces authentication and profile completeness.
+- `src/components/ui`: Reusable atomic components (`Button`, `Input`, `DotGrid`, `GroupActionModal`).
+- `src/contexts`: Global state providers using React Context API (`AuthContext`, `ThemeContext`) to minimalize prop drilling for app-wide settings.
+
+### State Management Strategy
+ZeroSplit uses a **Hybrid State Model**:
+1.  **Server State (Firestore)**: The "Source of Truth". Real-time listeners (`onSnapshot`) subscribe to collections, ensuring UI updates immediately when backend data changes without manual revalidation.
+2.  **Client State (React Context)**: Handles session-specific data (User Auth Object, Active Theme).
+3.  **Local State (useState)**: Handles ephemeral UI states (Form inputs, Modal visibility).
+
+### Security Model
+- **Route Protection**: `AppLayout` acts as a client-side gatekeeper, redirecting unauthenticated users to `/login` and unverified users to `/verify-email`.
+- **Database Security**: Firestore Security Rules (`firestore.rules`) enforce strict ownership:
+    - Users can only read/write their own profile.
+    - Group data is only accessible to users listed in the `members` array.
+    - Expense creation is restricted to group members.
+
+---
+
+## 4. Data Model (Firestore Schema)
+
+### `users` (Collection)
+Primary user profiles.
+- `id` (uid): Document ID.
+- `username`: Unique handle (indexed for availability checks).
+- `email`: User email.
+- `firstName`, `lastName`: Display names.
+- `avatar`: URL to profile picture.
+- `paymentMethods`: array of objects `{ type: 'upi' | 'bank', value }`.
+- `verificationStatus`: `{ emailVerified: boolean }`.
+
+### `groups` (Collection)
+Top-level expense groups.
+- `id`: Auto-generated ID.
+- `name`: Group display name.
+- `type`: 'Trip', 'Home', 'Couple', etc.
+- `members`: Array of user UIs `['uid1', 'uid2']`.
+- `createdBy`: `uid` of the creator.
+- `totalExpenses`: Aggregated total (triggers cloud function update).
+
+### `expenses` (Collection)
+*Design Decision: Root collection to allow "Recent Activity" queries across all groups.*
+- `groupId`: Reference to parent group.
+- `paidBy`: `uid` of payer.
+- `amount`: Number.
+- `splitBetween`: Array of `uids` involved.
+- `description`: Text.
+- `timestamp`: Server timestamp.
+- `type`: 'expense' | 'settlement'.
+
+### `invites` (Collection)
+Pending invitations to join groups.
+- `groupId`: Target group.
+- `invitedBy`: `uid` of sender.
+- `status`: 'pending' | 'accepted' | 'rejected'.
+- `code`: 6-digit alphanumeric code for easier sharing.
+
+---
+
+## 5. Key Workflows & Features
+
+### 1. Authentication & Onboarding
+- **Sign Up**: Email/Password or Google.
+- **Verification Gate**: New accounts are redirected to `/verify-email`. The main app is inaccessible until the email link is clicked.
+- **Profile Completion**: Users must provide a `username` before accessing the dashboard.
+- **Payment Setup**: Onboarding wizard prompts for UPI/Bank details to enable seamless settlements.
+
+### 2. Group Management
+- **Unified Action Modal**: A single `GroupActionModal` handles both creating new groups and joining existing ones (via code).
+- **Invite System**: Users can generate shareable links (using Web Share API) or codes.
+
+### 3. Expense Splitting Engine
+- **Logic**: When an expense is added, the app calculates the "per person" share.
+- **Settlement**: The app identifies debts (e.g., "A owes B $50").
+- **Zero The Split**: A dedicated "Settle" mode allows users to mark debts as paid. If payment details are available, it deep-links to payment apps (UPI).
+
+### 4. Real-time Activity Feed
+- A global `onSnapshot` listener aggregates activities (New changes, payments, member joins) into a single timeline, keeping users aware of all group actions instantly.
+
+---
+
+## 6. UX/UI Philosophy
+
+### "Glassmorphism & Depth"
+The UI uses extensive transparency effects to create depth.
+- **Cards**: `.animated-border-card` uses a moving gradient border to draw attention.
+- **Backgrounds**: The `DotGrid` component creates a living, breathing background that reacts to mouse movement (`shockRadius` effect), moving away from static white pages.
+
+### "Mobile First"
+- **Touch Targets**: All buttons are 44px+ min-height.
+- **Navigation**: Instagram-style bottom navigation bar for ease of thumb reach.
+- **PWA**: Custom "Add to Home Screen" prompt integrated into the Landing Page.
+
+---
+
+## 7. Future Roadmap
+
+### Short Term (v2.1)
+- **Push Notifications**: Integrate Firebase Cloud Messaging (FCM) for "New Expense" alerts.
+- **Expense Categories**: Analytics charts breaking down spending by Food, Travel, etc.
+
+### Mid Term (v2.5)
+- **Multi-Currency**: Support for international trips with real-time exchange rate conversion.
+- **Recurring Expenses**: Logic for rent/subscription splitting.
+
+### Long Term (v3.0)
+- **AI Receipt Scanning**: Optical Character Recognition (OCR) to auto-fill expense details from photos.

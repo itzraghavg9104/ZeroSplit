@@ -9,17 +9,14 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { Group } from "@/types";
 import MobileNav from "@/components/layout/MobileNav";
+import GroupActionModal from "@/components/ui/GroupActionModal";
 
 export default function GroupsPage() {
     const router = useRouter();
     const { user, loading } = useAuth();
     const [groups, setGroups] = useState<Group[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [showJoinModal, setShowJoinModal] = useState(false);
-    const [showActionModal, setShowActionModal] = useState(false);
-    const [inviteCode, setInviteCode] = useState("");
-    const [joinError, setJoinError] = useState("");
-    const [isJoining, setIsJoining] = useState(false);
+    const [showGroupModal, setShowGroupModal] = useState(false);
 
     useEffect(() => {
         if (!loading && !user) {
@@ -52,56 +49,6 @@ export default function GroupsPage() {
         if (user) fetchGroups();
     }, [user]);
 
-    const handleJoinGroup = async () => {
-        if (!inviteCode.trim() || !user) return;
-
-        setIsJoining(true);
-        setJoinError("");
-
-        try {
-            const code = inviteCode.trim().toUpperCase();
-            const q = query(
-                collection(db, "groups"),
-                where("inviteCode", "==", code)
-            );
-            const snapshot = await getDocs(q);
-
-            if (snapshot.empty) {
-                setJoinError("Invalid invite code. Please check and try again.");
-                return;
-            }
-
-            const groupDoc = snapshot.docs[0];
-            const groupData = { id: groupDoc.id, ...groupDoc.data() } as Group;
-
-            if (groupData.members.includes(user.id)) {
-                setJoinError("You're already a member of this group!");
-                return;
-            }
-
-            await updateDoc(doc(db, "groups", groupDoc.id), {
-                members: arrayUnion(user.id),
-                memberDetails: arrayUnion({
-                    id: user.id,
-                    username: user.username,
-                    firstName: user.firstName,
-                    lastName: user.lastName,
-                    email: user.email,
-                    joinedAt: Timestamp.now(),
-                }),
-                updatedAt: Timestamp.now(),
-            });
-
-            setShowJoinModal(false);
-            setInviteCode("");
-            router.push(`/group/${groupDoc.id}`);
-        } catch (error) {
-            console.error("Error joining group:", error);
-            setJoinError("Failed to join group. Please try again.");
-        } finally {
-            setIsJoining(false);
-        }
-    };
 
     if (loading || !user) {
         return (
@@ -345,16 +292,11 @@ export default function GroupsPage() {
                             Create a new group or join one using an invite code
                         </p>
                         <div style={{ display: "flex", gap: "12px", marginTop: "16px" }}>
-                            <Link href="/create-group" style={{ flex: 1 }}>
-                                <button style={{ ...styles.actionBtn, ...styles.createBtn, width: "100%" }}>
-                                    Create
-                                </button>
-                            </Link>
                             <button
-                                style={{ ...styles.actionBtn, ...styles.joinBtn, flex: 1 }}
-                                onClick={() => setShowJoinModal(true)}
+                                style={{ ...styles.actionBtn, ...styles.createBtn, width: "100%" }}
+                                onClick={() => setShowGroupModal(true)}
                             >
-                                Join
+                                Create or Join
                             </button>
                         </div>
                     </div>
@@ -388,7 +330,7 @@ export default function GroupsPage() {
 
             {/* FAB */}
             <button
-                onClick={() => setShowActionModal(true)}
+                onClick={() => setShowGroupModal(true)}
                 style={{
                     position: "fixed",
                     bottom: "90px",
@@ -411,133 +353,11 @@ export default function GroupsPage() {
             </button>
 
 
-            {/* Action Modal (Create or Join) */}
-            {
-                showActionModal && (
-                    <div style={styles.modal} onClick={() => setShowActionModal(false)}>
-                        <div style={{ ...styles.modalContent, paddingBottom: "40px" }} onClick={(e) => e.stopPropagation()}>
-                            <div style={styles.modalHeader}>
-                                <h2 style={styles.modalTitle}>New Group</h2>
-                                <button style={styles.closeBtn} onClick={() => setShowActionModal(false)}>
-                                    <X size={20} />
-                                </button>
-                            </div>
-
-                            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                                <Link href="/create-group" style={{ textDecoration: "none" }}>
-                                    <button style={{
-                                        display: "flex", alignItems: "center", gap: "16px",
-                                        width: "100%", padding: "16px",
-                                        backgroundColor: "var(--color-card)",
-                                        border: "1px solid var(--color-border)",
-                                        borderRadius: "16px",
-                                        cursor: "pointer",
-                                        textAlign: "left"
-                                    }}>
-                                        <div style={{
-                                            width: "48px", height: "48px",
-                                            backgroundColor: "rgba(0, 149, 246, 0.1)",
-                                            borderRadius: "50%",
-                                            display: "flex", alignItems: "center", justifyContent: "center",
-                                            color: "#0095F6"
-                                        }}>
-                                            <Plus size={24} />
-                                        </div>
-                                        <div style={{ flex: 1 }}>
-                                            <p style={{ fontWeight: 600, fontSize: "16px", color: "var(--color-foreground)" }}>Create New Group</p>
-                                            <p style={{ fontSize: "13px", color: "var(--color-muted)", marginTop: "2px" }}>Start a clean slate for expenses</p>
-                                        </div>
-                                        <ChevronRight size={20} color="var(--color-muted)" />
-                                    </button>
-                                </Link>
-
-                                <button
-                                    onClick={() => {
-                                        setShowActionModal(false);
-                                        setShowJoinModal(true);
-                                    }}
-                                    style={{
-                                        display: "flex", alignItems: "center", gap: "16px",
-                                        width: "100%", padding: "16px",
-                                        backgroundColor: "var(--color-card)",
-                                        border: "1px solid var(--color-border)",
-                                        borderRadius: "16px",
-                                        cursor: "pointer",
-                                        textAlign: "left"
-                                    }}
-                                >
-                                    <div style={{
-                                        width: "48px", height: "48px",
-                                        backgroundColor: "rgba(34, 197, 94, 0.1)",
-                                        borderRadius: "50%",
-                                        display: "flex", alignItems: "center", justifyContent: "center",
-                                        color: "#22c55e"
-                                    }}>
-                                        <Link2 size={24} />
-                                    </div>
-                                    <div style={{ flex: 1 }}>
-                                        <p style={{ fontWeight: 600, fontSize: "16px", color: "var(--color-foreground)" }}>Join Existing Group</p>
-                                        <p style={{ fontSize: "13px", color: "var(--color-muted)", marginTop: "2px" }}>Use an invite code to join</p>
-                                    </div>
-                                    <ChevronRight size={20} color="var(--color-muted)" />
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
-
-            {/* Join Group Modal */}
-            {
-                showJoinModal && (
-                    <div style={styles.modal} onClick={() => setShowJoinModal(false)}>
-                        <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-                            <div style={styles.modalHeader}>
-                                <h2 style={styles.modalTitle}>Join Group</h2>
-                                <button style={styles.closeBtn} onClick={() => setShowJoinModal(false)}>
-                                    <X size={20} />
-                                </button>
-                            </div>
-
-                            <div style={styles.inputGroup}>
-                                <label style={styles.label}>Enter Invite Code</label>
-                                <input
-                                    type="text"
-                                    placeholder="ABCD1234"
-                                    value={inviteCode}
-                                    onChange={(e) => {
-                                        setInviteCode(e.target.value.toUpperCase());
-                                        setJoinError("");
-                                    }}
-                                    style={styles.input}
-                                    maxLength={8}
-                                />
-                            </div>
-
-                            {joinError && <p style={styles.error}>{joinError}</p>}
-
-                            <button
-                                style={{ ...styles.submitBtn, opacity: isJoining || !inviteCode.trim() ? 0.6 : 1 }}
-                                onClick={handleJoinGroup}
-                                disabled={isJoining || !inviteCode.trim()}
-                            >
-                                {isJoining ? (
-                                    "Joining..."
-                                ) : (
-                                    <>
-                                        Join Group
-                                        <ArrowRight size={18} />
-                                    </>
-                                )}
-                            </button>
-
-                            <p style={{ marginTop: "16px", fontSize: "13px", color: "var(--color-muted)", textAlign: "center" }}>
-                                Ask your friend for the invite code or link
-                            </p>
-                        </div>
-                    </div>
-                )
-            }
+            {/* Group Action Modal */}
+            <GroupActionModal
+                isOpen={showGroupModal}
+                onClose={() => setShowGroupModal(false)}
+            />
         </div >
     );
 }

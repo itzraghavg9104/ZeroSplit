@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import {
-    ArrowLeft, Plus, Share2, Settings, Users,
+    ArrowLeft, Plus, Share2, Settings, Users, UserPlus
 } from "lucide-react";
 import {
     doc, getDoc, collection, query, where, getDocs, deleteDoc, updateDoc, onSnapshot, Timestamp
@@ -404,7 +404,7 @@ export default function GroupDetailsPage() {
                         </div>
                         <div style={styles.headerActions}>
                             <button onClick={() => setShowInviteModal(true)} style={styles.iconBtn}>
-                                <Share2 size={24} />
+                                <UserPlus size={24} />
                             </button>
                             <button style={styles.iconBtn}>
                                 <Settings size={24} />

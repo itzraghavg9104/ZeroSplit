@@ -12,6 +12,7 @@ import { calculateSettlements } from "@/utils/settlements";
 import { logActivity } from "@/utils/activity";
 import MobileNav from "@/components/layout/MobileNav";
 import { formatCurrency } from "@/lib/utils";
+import GroupActionModal from "@/components/ui/GroupActionModal";
 
 interface GroupWithBalance extends Group {
     balance: number;
@@ -23,6 +24,7 @@ export default function DashboardPage() {
     const [groups, setGroups] = useState<GroupWithBalance[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [totalBalance, setTotalBalance] = useState({ owed: 0, owe: 0 });
+    const [showGroupModal, setShowGroupModal] = useState(false);
 
     useEffect(() => {
         if (!loading && !user) {
@@ -533,12 +535,13 @@ export default function DashboardPage() {
                         <Users size={20} />
                         Your Groups
                     </h2>
-                    <Link href="/create-group">
-                        <button style={styles.newGroupBtn}>
-                            <Plus size={16} />
-                            New
-                        </button>
-                    </Link>
+                    <button
+                        onClick={() => setShowGroupModal(true)}
+                        style={styles.newGroupBtn}
+                    >
+                        <Plus size={16} />
+                        New
+                    </button>
                 </div>
 
                 {isLoading ? (
@@ -600,6 +603,12 @@ export default function DashboardPage() {
                     </div>
                 )}
             </main>
+
+            {/* Group Action Modal */}
+            <GroupActionModal
+                isOpen={showGroupModal}
+                onClose={() => setShowGroupModal(false)}
+            />
         </div>
     );
 }
