@@ -2,16 +2,21 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowLeft, Camera, Users, ImagePlus } from "lucide-react";
 import Link from "next/link";
-import { ArrowLeft, Camera, Loader2 } from "lucide-react";
 import { collection, addDoc, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
-import Button from "@/components/ui/Button";
-import Input from "@/components/ui/Input";
-import { generateInviteCode } from "@/lib/utils";
-import BottomNav from "@/components/layout/BottomNav";
-import Sidebar from "@/components/layout/Sidebar";
+import MobileNav from "@/components/layout/MobileNav";
+
+function generateInviteCode(): string {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let code = "";
+    for (let i = 0; i < 8; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+}
 
 export default function CreateGroupPage() {
     const router = useRouter();
@@ -23,115 +28,305 @@ export default function CreateGroupPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState("");
 
-    const handleChange = (
-        e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-    ) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+        setError("");
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user) return;
+        if (!user) {
+            router.push("/login");
+            return;
+        }
 
-        setError("");
+        if (!formData.name.trim()) {
+            setError("Group name is required");
+            return;
+        }
+
+        if (formData.name.trim().length < 2) {
+            setError("Group name must be at least 2 characters");
+            return;
+        }
+
         setIsLoading(true);
+        setError("");
 
         try {
             const inviteCode = generateInviteCode();
-            const groupRef = await addDoc(collection(db, "groups"), {
-                name: formData.name,
-                description: formData.description,
+
+            const groupData = {
+                name: formData.name.trim(),
+                description: formData.description.trim(),
                 members: [user.id],
+                memberDetails: [{
+                    id: user.id,
+                    username: user.username,
+                    firstName: user.firstName,
+                    lastName: user.lastName,
+                    email: user.email,
+                    joinedAt: Timestamp.now(),
+                }],
                 createdBy: user.id,
-                inviteCode,
+                inviteCode: inviteCode,
+                currency: user.currency || "INR",
                 createdAt: Timestamp.now(),
                 updatedAt: Timestamp.now(),
-            });
+            };
 
-            router.push(`/group/${groupRef.id}`);
-        } catch (err: unknown) {
-            const errorMessage =
-                err instanceof Error ? err.message : "Failed to create group";
-            setError(errorMessage);
+            const docRef = await addDoc(collection(db, "groups"), groupData);
+            router.push(`/group/${docRef.id}`);
+        } catch (err) {
+            console.error("Error creating group:", err);
+            setError("Failed to create group. Please check your connection and try again.");
         } finally {
             setIsLoading(false);
         }
     };
 
-    if (!user) {
-        return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            </div>
-        );
-    }
+    const styles = {
+        page: {
+            minHeight: "100vh",
+            backgroundColor: "var(--color-background)",
+            color: "var(--color-foreground)",
+            paddingBottom: "100px",
+        },
+        main: {
+            padding: "16px",
+            maxWidth: "500px",
+            margin: "0 auto",
+        },
+        header: {
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            marginBottom: "24px",
+        },
+        backBtn: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: "40px",
+            height: "40px",
+            background: "none",
+            border: "none",
+            color: "var(--color-foreground)",
+            cursor: "pointer",
+        },
+        title: {
+            fontSize: "20px",
+            fontWeight: 600,
+        },
+        card: {
+            backgroundColor: "var(--color-card)",
+            borderRadius: "20px",
+            border: "1px solid var(--color-border)",
+            padding: "24px",
+            marginBottom: "20px",
+        },
+        imageUpload: {
+            display: "flex",
+            alignItems: "center",
+            gap: "20px",
+            marginBottom: "24px",
+            paddingBottom: "24px",
+            borderBottom: "1px solid var(--color-border)",
+        },
+        uploadBtn: {
+            width: "80px",
+            height: "80px",
+            backgroundColor: "rgba(0, 149, 246, 0.1)",
+            border: "2px dashed var(--color-border)",
+            borderRadius: "20px",
+            display: "flex",
+            flexDirection: "column" as const,
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "4px",
+            cursor: "pointer",
+            color: "var(--color-muted)",
+            flexShrink: 0,
+        },
+        uploadText: {
+            flex: 1,
+        },
+        uploadTitle: {
+            fontWeight: 600,
+            marginBottom: "4px",
+        },
+        uploadDesc: {
+            fontSize: "13px",
+            color: "var(--color-muted)",
+        },
+        form: {
+            display: "flex",
+            flexDirection: "column" as const,
+            gap: "20px",
+        },
+        inputGroup: {
+            display: "flex",
+            flexDirection: "column" as const,
+            gap: "8px",
+        },
+        label: {
+            fontSize: "14px",
+            fontWeight: 600,
+        },
+        required: {
+            color: "#ef4444",
+        },
+        input: {
+            width: "100%",
+            padding: "14px 16px",
+            backgroundColor: "var(--color-background)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "12px",
+            color: "var(--color-foreground)",
+            fontSize: "16px",
+            outline: "none",
+        },
+        textarea: {
+            width: "100%",
+            padding: "14px 16px",
+            backgroundColor: "var(--color-background)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "12px",
+            color: "var(--color-foreground)",
+            fontSize: "16px",
+            outline: "none",
+            minHeight: "100px",
+            resize: "none" as const,
+            fontFamily: "inherit",
+        },
+        charCount: {
+            fontSize: "12px",
+            color: "var(--color-muted)",
+            textAlign: "right" as const,
+        },
+        error: {
+            padding: "14px",
+            backgroundColor: "rgba(239, 68, 68, 0.1)",
+            border: "1px solid rgba(239, 68, 68, 0.2)",
+            borderRadius: "12px",
+            color: "#ef4444",
+            fontSize: "14px",
+            textAlign: "center" as const,
+        },
+        submitBtn: {
+            width: "100%",
+            padding: "16px",
+            backgroundColor: "#0095F6",
+            color: "white",
+            border: "none",
+            borderRadius: "14px",
+            fontSize: "16px",
+            fontWeight: 600,
+            cursor: "pointer",
+            opacity: isLoading ? 0.7 : 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
+        },
+        hint: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
+            padding: "16px",
+            backgroundColor: "rgba(0, 149, 246, 0.05)",
+            borderRadius: "12px",
+            fontSize: "13px",
+            color: "var(--color-muted)",
+        },
+    };
 
     return (
-        <div className="min-h-screen pb-20 md:pb-0 md:pl-64">
-            <Sidebar />
+        <div style={styles.page}>
+            <MobileNav />
 
-            <main className="p-4 md:p-8 max-w-lg mx-auto">
-                <Link
-                    href="/dashboard"
-                    className="inline-flex items-center gap-2 text-muted hover:text-foreground transition-colors mb-6"
-                >
-                    <ArrowLeft className="w-4 h-4" />
-                    Back
-                </Link>
-
-                <h1 className="text-2xl font-bold mb-2">Create a Group</h1>
-                <p className="text-muted mb-8">
-                    Start tracking shared expenses with friends
-                </p>
-
-                <form onSubmit={handleSubmit} className="space-y-6">
-                    {error && (
-                        <div className="p-3 bg-danger/10 border border-danger/20 rounded-lg text-danger text-sm">
-                            {error}
-                        </div>
-                    )}
-
-                    {/* Group Image Placeholder */}
-                    <div className="flex justify-center">
-                        <button
-                            type="button"
-                            className="w-24 h-24 bg-card border-2 border-dashed border-border rounded-2xl flex flex-col items-center justify-center text-muted hover:border-primary hover:text-primary transition-colors"
-                        >
-                            <Camera className="w-6 h-6 mb-1" />
-                            <span className="text-xs">Add Photo</span>
+            <main style={styles.main}>
+                <div style={styles.header}>
+                    <Link href="/groups">
+                        <button style={styles.backBtn}>
+                            <ArrowLeft size={24} />
                         </button>
+                    </Link>
+                    <h1 style={styles.title}>Create Group</h1>
+                </div>
+
+                <div style={styles.card}>
+                    <div style={styles.imageUpload}>
+                        <button style={styles.uploadBtn} type="button">
+                            <ImagePlus size={24} />
+                        </button>
+                        <div style={styles.uploadText}>
+                            <p style={styles.uploadTitle}>Group Photo</p>
+                            <p style={styles.uploadDesc}>Add a photo to make your group recognizable</p>
+                        </div>
                     </div>
 
-                    <Input
-                        label="Group Name"
-                        name="name"
-                        placeholder="e.g., Trip to Goa"
-                        value={formData.name}
-                        onChange={handleChange}
-                        required
-                    />
+                    <form onSubmit={handleSubmit} style={styles.form}>
+                        {error && <div style={styles.error}>{error}</div>}
 
-                    <div>
-                        <label className="block text-sm font-medium text-muted mb-1.5">
-                            Description (optional)
-                        </label>
-                        <textarea
-                            name="description"
-                            placeholder="What's this group for?"
-                            value={formData.description}
-                            onChange={handleChange}
-                            rows={3}
-                            className="w-full px-4 py-2.5 bg-card border border-border rounded-lg text-sm text-foreground placeholder:text-muted/60 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
-                        />
-                    </div>
+                        <div style={styles.inputGroup}>
+                            <label style={styles.label}>
+                                Group Name <span style={styles.required}>*</span>
+                            </label>
+                            <input
+                                name="name"
+                                placeholder="e.g. Trip to Goa, Apartment Rent"
+                                value={formData.name}
+                                onChange={handleChange}
+                                style={styles.input}
+                                maxLength={50}
+                                required
+                            />
+                            <p style={styles.charCount}>{formData.name.length}/50</p>
+                        </div>
 
-                    <Button type="submit" fullWidth isLoading={isLoading}>
-                        Create Group
-                    </Button>
-                </form>
+                        <div style={styles.inputGroup}>
+                            <label style={styles.label}>Description</label>
+                            <textarea
+                                name="description"
+                                placeholder="What's this group for? (optional)"
+                                value={formData.description}
+                                onChange={handleChange}
+                                style={styles.textarea}
+                                maxLength={200}
+                            />
+                            <p style={styles.charCount}>{formData.description.length}/200</p>
+                        </div>
+
+                        <button type="submit" disabled={isLoading} style={styles.submitBtn}>
+                            {isLoading ? (
+                                <>
+                                    <div style={{
+                                        width: "18px",
+                                        height: "18px",
+                                        border: "2px solid rgba(255,255,255,0.3)",
+                                        borderTopColor: "white",
+                                        borderRadius: "50%",
+                                        animation: "spin 1s linear infinite",
+                                    }} />
+                                    Creating...
+                                </>
+                            ) : (
+                                <>
+                                    <Users size={18} />
+                                    Create Group
+                                </>
+                            )}
+                        </button>
+                    </form>
+                </div>
+
+                <div style={styles.hint}>
+                    <Users size={16} />
+                    You can invite members after creating the group using a link or username
+                </div>
             </main>
-
-            <BottomNav />
         </div>
     );
 }

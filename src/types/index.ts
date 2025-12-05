@@ -15,6 +15,7 @@ export interface User {
 export interface PaymentDetails {
     upiId?: string;
     bankAccountNumber?: string;
+    ifscCode?: string;
 }
 
 // Group types

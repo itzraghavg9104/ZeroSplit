@@ -3,15 +3,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, TrendingUp, TrendingDown, Users } from "lucide-react";
-import { collection, query, where, getDocs, getDoc, doc } from "firebase/firestore";
+import { Plus, TrendingUp, TrendingDown, Users, ChevronRight } from "lucide-react";
+import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { Group } from "@/types";
-import Button from "@/components/ui/Button";
-import Avatar from "@/components/ui/Avatar";
-import BottomNav from "@/components/layout/BottomNav";
-import Sidebar from "@/components/layout/Sidebar";
+import MobileNav from "@/components/layout/MobileNav";
 import { formatCurrency } from "@/lib/utils";
 
 interface GroupWithBalance extends Group {
@@ -45,14 +42,12 @@ export default function DashboardPage() {
 
                 for (const docSnap of snapshot.docs) {
                     const group = { id: docSnap.id, ...docSnap.data() } as Group;
-                    // TODO: Calculate actual balance from expenses
                     const balance = 0;
                     groupsData.push({ ...group, balance });
                 }
 
                 setGroups(groupsData);
 
-                // Calculate totals
                 let owed = 0;
                 let owe = 0;
                 groupsData.forEach((g) => {
@@ -72,144 +67,301 @@ export default function DashboardPage() {
 
     if (loading || !user) {
         return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <div style={{
+                minHeight: "100vh",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "var(--color-background)"
+            }}>
+                <div style={{
+                    width: "32px",
+                    height: "32px",
+                    border: "3px solid var(--color-border)",
+                    borderTopColor: "#0095F6",
+                    borderRadius: "50%",
+                    animation: "spin 1s linear infinite"
+                }} />
             </div>
         );
     }
 
-    return (
-        <div className="min-h-screen pb-20 md:pb-0 md:pl-64">
-            <Sidebar />
+    const styles = {
+        page: {
+            minHeight: "100vh",
+            backgroundColor: "var(--color-background)",
+            color: "var(--color-foreground)",
+            paddingBottom: "80px",
+        },
+        main: {
+            padding: "16px",
+            maxWidth: "600px",
+            margin: "0 auto",
+        },
+        greeting: {
+            marginBottom: "24px",
+        },
+        greetingTitle: {
+            fontSize: "24px",
+            fontWeight: 700,
+            marginBottom: "4px",
+        },
+        greetingSubtitle: {
+            color: "var(--color-muted)",
+            fontSize: "14px",
+        },
+        balanceGrid: {
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "12px",
+            marginBottom: "24px",
+        },
+        balanceCard: {
+            padding: "16px",
+            borderRadius: "16px",
+            border: "1px solid",
+        },
+        balanceCardGreen: {
+            backgroundColor: "rgba(34, 197, 94, 0.1)",
+            borderColor: "rgba(34, 197, 94, 0.2)",
+        },
+        balanceCardRed: {
+            backgroundColor: "rgba(239, 68, 68, 0.1)",
+            borderColor: "rgba(239, 68, 68, 0.2)",
+        },
+        balanceLabel: {
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            fontSize: "13px",
+            fontWeight: 500,
+            marginBottom: "8px",
+        },
+        balanceAmount: {
+            fontSize: "22px",
+            fontWeight: 700,
+        },
+        sectionHeader: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: "16px",
+        },
+        sectionTitle: {
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            fontSize: "16px",
+            fontWeight: 600,
+        },
+        newGroupBtn: {
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            padding: "8px 14px",
+            backgroundColor: "#0095F6",
+            color: "white",
+            border: "none",
+            borderRadius: "10px",
+            fontSize: "13px",
+            fontWeight: 500,
+            cursor: "pointer",
+        },
+        emptyState: {
+            textAlign: "center" as const,
+            padding: "48px 24px",
+            backgroundColor: "var(--color-card)",
+            borderRadius: "16px",
+            border: "1px solid var(--color-border)",
+        },
+        emptyIcon: {
+            width: "48px",
+            height: "48px",
+            margin: "0 auto 16px",
+            color: "var(--color-muted)",
+        },
+        emptyTitle: {
+            fontWeight: 600,
+            marginBottom: "8px",
+        },
+        emptyText: {
+            color: "var(--color-muted)",
+            fontSize: "14px",
+            marginBottom: "20px",
+        },
+        createBtn: {
+            padding: "12px 24px",
+            backgroundColor: "#0095F6",
+            color: "white",
+            border: "none",
+            borderRadius: "12px",
+            fontSize: "14px",
+            fontWeight: 600,
+            cursor: "pointer",
+        },
+        groupList: {
+            display: "flex",
+            flexDirection: "column" as const,
+            gap: "12px",
+        },
+        groupCard: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "16px",
+            backgroundColor: "var(--color-card)",
+            borderRadius: "16px",
+            border: "1px solid var(--color-border)",
+            textDecoration: "none",
+            color: "inherit",
+        },
+        groupInfo: {
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+        },
+        groupIcon: {
+            width: "48px",
+            height: "48px",
+            backgroundColor: "rgba(0, 149, 246, 0.1)",
+            borderRadius: "12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            overflow: "hidden",
+        },
+        groupName: {
+            fontWeight: 600,
+            marginBottom: "2px",
+        },
+        groupMembers: {
+            fontSize: "13px",
+            color: "var(--color-muted)",
+        },
+        groupBalance: {
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+        },
+        balanceText: {
+            textAlign: "right" as const,
+        },
+        skeleton: {
+            height: "80px",
+            backgroundColor: "var(--color-card)",
+            borderRadius: "16px",
+            animation: "pulse 2s ease-in-out infinite",
+        },
+    };
 
-            <main className="p-4 md:p-8 max-w-2xl mx-auto">
-                {/* Header */}
-                <div className="flex items-center justify-between mb-8">
-                    <div>
-                        <h1 className="text-2xl font-bold">
-                            Hello, {user.firstName || "User"}
-                        </h1>
-                        <p className="text-muted mt-1">Here&apos;s your balance summary</p>
-                    </div>
-                    <Link href="/profile">
-                        <Avatar
-                            src={user.profilePicture}
-                            firstName={user.firstName}
-                            lastName={user.lastName}
-                            size="md"
-                        />
-                    </Link>
+    return (
+        <div style={styles.page}>
+            <MobileNav />
+
+            <main style={styles.main}>
+                {/* Greeting */}
+                <div style={styles.greeting}>
+                    <h1 style={styles.greetingTitle}>
+                        Hello, {user.firstName || "there"} 👋
+                    </h1>
+                    <p style={styles.greetingSubtitle}>Here&apos;s your balance summary</p>
                 </div>
 
                 {/* Balance Summary */}
-                <div className="grid grid-cols-2 gap-4 mb-8">
-                    <div className="p-4 bg-success/10 rounded-2xl border border-success/20">
-                        <div className="flex items-center gap-2 text-success mb-2">
-                            <TrendingUp className="w-5 h-5" />
-                            <span className="text-sm font-medium">You are owed</span>
+                <div style={styles.balanceGrid}>
+                    <div style={{ ...styles.balanceCard, ...styles.balanceCardGreen }}>
+                        <div style={{ ...styles.balanceLabel, color: "#22c55e" }}>
+                            <TrendingUp size={18} />
+                            <span>You are owed</span>
                         </div>
-                        <p className="text-2xl font-bold text-success">
+                        <p style={{ ...styles.balanceAmount, color: "#22c55e" }}>
                             {formatCurrency(totalBalance.owed, user.currency)}
                         </p>
                     </div>
-                    <div className="p-4 bg-danger/10 rounded-2xl border border-danger/20">
-                        <div className="flex items-center gap-2 text-danger mb-2">
-                            <TrendingDown className="w-5 h-5" />
-                            <span className="text-sm font-medium">You owe</span>
+                    <div style={{ ...styles.balanceCard, ...styles.balanceCardRed }}>
+                        <div style={{ ...styles.balanceLabel, color: "#ef4444" }}>
+                            <TrendingDown size={18} />
+                            <span>You owe</span>
                         </div>
-                        <p className="text-2xl font-bold text-danger">
+                        <p style={{ ...styles.balanceAmount, color: "#ef4444" }}>
                             {formatCurrency(totalBalance.owe, user.currency)}
                         </p>
                     </div>
                 </div>
 
                 {/* Groups Section */}
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold flex items-center gap-2">
-                        <Users className="w-5 h-5" />
+                <div style={styles.sectionHeader}>
+                    <h2 style={styles.sectionTitle}>
+                        <Users size={20} />
                         Your Groups
                     </h2>
                     <Link href="/create-group">
-                        <Button size="sm">
-                            <Plus className="w-4 h-4" />
-                            New Group
-                        </Button>
+                        <button style={styles.newGroupBtn}>
+                            <Plus size={16} />
+                            New
+                        </button>
                     </Link>
                 </div>
 
                 {isLoading ? (
-                    <div className="space-y-3">
+                    <div style={styles.groupList}>
                         {[1, 2, 3].map((i) => (
-                            <div
-                                key={i}
-                                className="h-20 bg-card rounded-xl animate-pulse"
-                            />
+                            <div key={i} style={styles.skeleton} />
                         ))}
                     </div>
                 ) : groups.length === 0 ? (
-                    <div className="text-center py-12 bg-card rounded-2xl border border-border">
-                        <Users className="w-12 h-12 text-muted mx-auto mb-4" />
-                        <h3 className="font-semibold mb-2">No groups yet</h3>
-                        <p className="text-muted text-sm mb-4">
+                    <div style={styles.emptyState}>
+                        <Users style={styles.emptyIcon} />
+                        <h3 style={styles.emptyTitle}>No groups yet</h3>
+                        <p style={styles.emptyText}>
                             Create a group to start splitting expenses
                         </p>
                         <Link href="/create-group">
-                            <Button>Create Your First Group</Button>
+                            <button style={styles.createBtn}>Create Your First Group</button>
                         </Link>
                     </div>
                 ) : (
-                    <div className="space-y-3">
+                    <div style={styles.groupList}>
                         {groups.map((group) => (
-                            <Link
-                                key={group.id}
-                                href={`/group/${group.id}`}
-                                className="flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/30 transition-colors"
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
+                            <Link key={group.id} href={`/group/${group.id}`} style={styles.groupCard}>
+                                <div style={styles.groupInfo}>
+                                    <div style={styles.groupIcon}>
                                         {group.image ? (
                                             <img
                                                 src={group.image}
                                                 alt={group.name}
-                                                className="w-full h-full object-cover rounded-xl"
+                                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
                                             />
                                         ) : (
-                                            <Users className="w-6 h-6 text-primary" />
+                                            <Users size={24} color="#0095F6" />
                                         )}
                                     </div>
                                     <div>
-                                        <h3 className="font-medium">{group.name}</h3>
-                                        <p className="text-sm text-muted">
-                                            {group.members.length} members
-                                        </p>
+                                        <p style={styles.groupName}>{group.name}</p>
+                                        <p style={styles.groupMembers}>{group.members.length} members</p>
                                     </div>
                                 </div>
-                                <div
-                                    className={`text-right ${group.balance > 0
-                                            ? "text-success"
-                                            : group.balance < 0
-                                                ? "text-danger"
-                                                : "text-muted"
-                                        }`}
-                                >
-                                    <p className="font-semibold">
-                                        {group.balance === 0
-                                            ? "Settled"
-                                            : formatCurrency(Math.abs(group.balance), user.currency)}
-                                    </p>
-                                    {group.balance !== 0 && (
-                                        <p className="text-xs">
-                                            {group.balance > 0 ? "get back" : "owe"}
+                                <div style={styles.groupBalance}>
+                                    <div style={styles.balanceText}>
+                                        <p style={{
+                                            fontWeight: 600,
+                                            color: group.balance > 0 ? "#22c55e" : group.balance < 0 ? "#ef4444" : "var(--color-muted)"
+                                        }}>
+                                            {group.balance === 0 ? "Settled" : formatCurrency(Math.abs(group.balance), user.currency)}
                                         </p>
-                                    )}
+                                        {group.balance !== 0 && (
+                                            <p style={{ fontSize: "12px", color: group.balance > 0 ? "#22c55e" : "#ef4444" }}>
+                                                {group.balance > 0 ? "get back" : "owe"}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <ChevronRight size={20} color="var(--color-muted)" />
                                 </div>
                             </Link>
                         ))}
                     </div>
                 )}
             </main>
-
-            <BottomNav />
         </div>
     );
 }

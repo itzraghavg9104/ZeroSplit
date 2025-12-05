@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -10,27 +11,27 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "FairSplit - Split Expenses Fairly",
-    template: "%s | FairSplit",
+    default: "ZeroSplit - Split Expenses Fairly",
+    template: "%s | ZeroSplit",
   },
   description:
     "Split expenses with friends and minimize transactions with smart debt simplification.",
   manifest: "/manifest.json",
   icons: {
-    icon: "/icons/icon-192x192.png",
-    apple: "/icons/icon-192x192.png",
+    icon: "/logoIcon.png",
+    apple: "/logoIcon.png",
   },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "FairSplit",
+    title: "ZeroSplit",
   },
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://fairsplit.app",
-    siteName: "FairSplit",
-    title: "FairSplit - Split Expenses Fairly",
+    url: "https://zerosplit.app",
+    siteName: "ZeroSplit",
+    title: "ZeroSplit - Split Expenses Fairly",
     description:
       "Split expenses with friends and minimize transactions with smart debt simplification.",
   },
@@ -55,7 +56,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} antialiased`}>
-        <AuthProvider>{children}</AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

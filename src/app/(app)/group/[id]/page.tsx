@@ -4,36 +4,27 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import {
-    ArrowLeft,
-    Plus,
-    Share2,
-    Settings,
-    Users,
-    Receipt,
-    Calculator,
-    Copy,
-    Check,
+    ArrowLeft, Plus, Share2, Settings, Users, Receipt, Calculator,
+    Copy, Check, UserPlus, Link2, X, Search, Wallet, CreditCard
 } from "lucide-react";
 import {
-    doc,
-    getDoc,
-    collection,
-    query,
-    where,
-    orderBy,
-    getDocs,
+    doc, getDoc, collection, query, where, orderBy, getDocs, updateDoc, arrayUnion, Timestamp
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
-import { Group, Expense, User } from "@/types";
-import { simplifyDebts, calculateBalances, Transaction } from "@/lib/algorithms";
-import { formatCurrency, formatRelativeTime } from "@/lib/utils";
-import Button from "@/components/ui/Button";
-import Avatar from "@/components/ui/Avatar";
-import BottomNav from "@/components/layout/BottomNav";
-import Sidebar from "@/components/layout/Sidebar";
+import { Group, Expense, User, PaymentDetails } from "@/types";
+import MobileNav from "@/components/layout/MobileNav";
 
-type TabType = "expenses" | "balances" | "settle";
+type TabType = "expenses" | "balances" | "settle" | "members";
+
+interface MemberDetail {
+    id: string;
+    username: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    paymentDetails?: PaymentDetails;
+}
 
 export default function GroupDetailsPage() {
     const router = useRouter();
@@ -44,24 +35,34 @@ export default function GroupDetailsPage() {
     const [group, setGroup] = useState<Group | null>(null);
     const [members, setMembers] = useState<User[]>([]);
     const [expenses, setExpenses] = useState<Expense[]>([]);
-    const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [activeTab, setActiveTab] = useState<TabType>("expenses");
     const [isLoading, setIsLoading] = useState(true);
     const [copied, setCopied] = useState(false);
-    const [showExpenseModal, setShowExpenseModal] = useState(false);
+    const [showInviteModal, setShowInviteModal] = useState(false);
+    const [usernameSearch, setUsernameSearch] = useState("");
+    const [searchResult, setSearchResult] = useState<User | null>(null);
+    const [searchError, setSearchError] = useState("");
+    const [isSearching, setIsSearching] = useState(false);
+    const [isAddingMember, setIsAddingMember] = useState(false);
 
     useEffect(() => {
         const fetchGroupData = async () => {
             if (!user) return;
 
             try {
-                // Fetch group
                 const groupDoc = await getDoc(doc(db, "groups", groupId));
                 if (!groupDoc.exists()) {
-                    router.push("/dashboard");
+                    router.push("/groups");
                     return;
                 }
                 const groupData = { id: groupDoc.id, ...groupDoc.data() } as Group;
+
+                // Check if user is a member
+                if (!groupData.members.includes(user.id)) {
+                    router.push("/groups");
+                    return;
+                }
+
                 setGroup(groupData);
 
                 // Fetch members
@@ -74,21 +75,21 @@ export default function GroupDetailsPage() {
                 setMembers(membersData);
 
                 // Fetch expenses
-                const expensesQuery = query(
-                    collection(db, "expenses"),
-                    where("groupId", "==", groupId),
-                    orderBy("createdAt", "desc")
-                );
-                const expensesSnapshot = await getDocs(expensesQuery);
-                const expensesData = expensesSnapshot.docs.map(
-                    (d) => ({ id: d.id, ...d.data() } as Expense)
-                );
-                setExpenses(expensesData);
-
-                // Calculate simplified debts
-                const balances = calculateBalances(expensesData);
-                const simplified = simplifyDebts(balances);
-                setTransactions(simplified);
+                try {
+                    const expensesQuery = query(
+                        collection(db, "expenses"),
+                        where("groupId", "==", groupId),
+                        orderBy("createdAt", "desc")
+                    );
+                    const expensesSnapshot = await getDocs(expensesQuery);
+                    const expensesData = expensesSnapshot.docs.map(
+                        (d) => ({ id: d.id, ...d.data() } as Expense)
+                    );
+                    setExpenses(expensesData);
+                } catch (error) {
+                    console.log("No expenses or index needed");
+                    setExpenses([]);
+                }
             } catch (error) {
                 console.error("Error fetching group:", error);
             } finally {
@@ -107,78 +108,524 @@ export default function GroupDetailsPage() {
         setTimeout(() => setCopied(false), 2000);
     };
 
+    const copyInviteCode = () => {
+        if (!group) return;
+        navigator.clipboard.writeText(group.inviteCode);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    const searchByUsername = async () => {
+        if (!usernameSearch.trim()) return;
+
+        setIsSearching(true);
+        setSearchError("");
+        setSearchResult(null);
+
+        try {
+            const username = usernameSearch.toLowerCase().replace("@", "");
+            const q = query(
+                collection(db, "users"),
+                where("username", "==", username)
+            );
+            const snapshot = await getDocs(q);
+
+            if (snapshot.empty) {
+                setSearchError("User not found");
+            } else {
+                const foundUser = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as User;
+
+                if (group?.members.includes(foundUser.id)) {
+                    setSearchError("User is already a member");
+                } else {
+                    setSearchResult(foundUser);
+                }
+            }
+        } catch (error) {
+            setSearchError("Error searching for user");
+        } finally {
+            setIsSearching(false);
+        }
+    };
+
+    const addMemberByUsername = async () => {
+        if (!searchResult || !group || !user) return;
+
+        setIsAddingMember(true);
+        try {
+            await updateDoc(doc(db, "groups", groupId), {
+                members: arrayUnion(searchResult.id),
+                memberDetails: arrayUnion({
+                    id: searchResult.id,
+                    username: searchResult.username,
+                    firstName: searchResult.firstName,
+                    lastName: searchResult.lastName,
+                    email: searchResult.email,
+                    joinedAt: Timestamp.now(),
+                }),
+                updatedAt: Timestamp.now(),
+            });
+
+            setMembers([...members, searchResult]);
+            setGroup({ ...group, members: [...group.members, searchResult.id] });
+            setShowInviteModal(false);
+            setUsernameSearch("");
+            setSearchResult(null);
+        } catch (error) {
+            console.error("Error adding member:", error);
+            setSearchError("Failed to add member");
+        } finally {
+            setIsAddingMember(false);
+        }
+    };
+
     const getMemberName = (id: string) => {
         const member = members.find((m) => m.id === id);
         return member ? `${member.firstName} ${member.lastName}`.trim() : "Unknown";
     };
 
-    if (isLoading || !group) {
+    const calculateBalance = (memberId: string): number => {
+        let balance = 0;
+        expenses.forEach((expense) => {
+            if (expense.payerId === memberId) {
+                balance += expense.amount;
+            }
+            const split = expense.splits?.find((s) => s.memberId === memberId);
+            if (split) {
+                balance -= split.amount;
+            }
+        });
+        return balance;
+    };
+
+    const styles = {
+        page: {
+            minHeight: "100vh",
+            backgroundColor: "var(--color-background)",
+            color: "var(--color-foreground)",
+            paddingBottom: "100px",
+        },
+        main: {
+            maxWidth: "600px",
+            margin: "0 auto",
+        },
+        header: {
+            position: "sticky" as const,
+            top: "56px",
+            backgroundColor: "var(--color-background)",
+            borderBottom: "1px solid var(--color-border)",
+            zIndex: 40,
+        },
+        headerTop: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "16px",
+        },
+        headerLeft: {
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+        },
+        backBtn: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: "36px",
+            height: "36px",
+            background: "none",
+            border: "none",
+            color: "var(--color-foreground)",
+            cursor: "pointer",
+        },
+        groupTitle: {
+            fontSize: "18px",
+            fontWeight: 600,
+        },
+        groupSubtitle: {
+            fontSize: "12px",
+            color: "var(--color-muted)",
+        },
+        headerActions: {
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+        },
+        iconBtn: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: "40px",
+            height: "40px",
+            background: "none",
+            border: "none",
+            color: "var(--color-muted)",
+            cursor: "pointer",
+        },
+        tabs: {
+            display: "flex",
+            borderBottom: "1px solid var(--color-border)",
+        },
+        tab: {
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "6px",
+            padding: "12px",
+            background: "none",
+            border: "none",
+            fontSize: "13px",
+            fontWeight: 500,
+            color: "var(--color-muted)",
+            cursor: "pointer",
+        },
+        tabActive: {
+            color: "#0095F6",
+            borderBottom: "2px solid #0095F6",
+        },
+        content: {
+            padding: "16px",
+        },
+        emptyState: {
+            textAlign: "center" as const,
+            padding: "48px 24px",
+        },
+        emptyIcon: {
+            width: "48px",
+            height: "48px",
+            marginBottom: "16px",
+            color: "var(--color-muted)",
+        },
+        emptyTitle: {
+            fontWeight: 600,
+            marginBottom: "8px",
+        },
+        emptyText: {
+            fontSize: "14px",
+            color: "var(--color-muted)",
+        },
+        card: {
+            backgroundColor: "var(--color-card)",
+            borderRadius: "12px",
+            border: "1px solid var(--color-border)",
+            padding: "16px",
+            marginBottom: "12px",
+        },
+        cardHeader: {
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+        },
+        expenseTitle: {
+            fontWeight: 500,
+            marginBottom: "4px",
+        },
+        expenseSubtitle: {
+            fontSize: "13px",
+            color: "var(--color-muted)",
+        },
+        expenseAmount: {
+            fontWeight: 600,
+            textAlign: "right" as const,
+        },
+        expenseDate: {
+            fontSize: "12px",
+            color: "var(--color-muted)",
+        },
+        memberRow: {
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            padding: "12px 0",
+            borderBottom: "1px solid var(--color-border)",
+        },
+        memberRowLast: {
+            borderBottom: "none",
+        },
+        memberAvatar: {
+            width: "44px",
+            height: "44px",
+            borderRadius: "50%",
+            background: "linear-gradient(135deg, #0095F6, #00D4AA)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "white",
+            fontWeight: 600,
+            fontSize: "16px",
+        },
+        memberInfo: {
+            flex: 1,
+        },
+        memberName: {
+            fontWeight: 500,
+        },
+        memberUsername: {
+            fontSize: "13px",
+            color: "var(--color-muted)",
+        },
+        balance: {
+            fontWeight: 600,
+        },
+        balancePositive: { color: "#22c55e" },
+        balanceNegative: { color: "#ef4444" },
+        balanceZero: { color: "var(--color-muted)" },
+        fab: {
+            position: "fixed" as const,
+            bottom: "90px",
+            right: "20px",
+            width: "56px",
+            height: "56px",
+            backgroundColor: "#0095F6",
+            borderRadius: "16px",
+            border: "none",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "white",
+            cursor: "pointer",
+            boxShadow: "0 4px 12px rgba(0, 149, 246, 0.4)",
+        },
+        modal: {
+            position: "fixed" as const,
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "center",
+            zIndex: 200,
+        },
+        modalContent: {
+            width: "100%",
+            maxWidth: "500px",
+            backgroundColor: "var(--color-background)",
+            borderTopLeftRadius: "20px",
+            borderTopRightRadius: "20px",
+            padding: "24px",
+            maxHeight: "80vh",
+            overflow: "auto",
+        },
+        modalHeader: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: "24px",
+        },
+        modalTitle: {
+            fontSize: "18px",
+            fontWeight: 600,
+        },
+        closeBtn: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: "32px",
+            height: "32px",
+            background: "none",
+            border: "none",
+            color: "var(--color-muted)",
+            cursor: "pointer",
+        },
+        inviteSection: {
+            marginBottom: "24px",
+        },
+        inviteLabel: {
+            fontSize: "13px",
+            fontWeight: 500,
+            color: "var(--color-muted)",
+            marginBottom: "8px",
+        },
+        inviteCode: {
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            padding: "12px 16px",
+            backgroundColor: "var(--color-card)",
+            borderRadius: "12px",
+            border: "1px solid var(--color-border)",
+        },
+        codeText: {
+            flex: 1,
+            fontFamily: "monospace",
+            fontSize: "16px",
+            fontWeight: 600,
+            letterSpacing: "2px",
+        },
+        copyBtn: {
+            padding: "8px 16px",
+            backgroundColor: "#0095F6",
+            color: "white",
+            border: "none",
+            borderRadius: "8px",
+            fontSize: "13px",
+            fontWeight: 500,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+        },
+        divider: {
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            margin: "20px 0",
+        },
+        dividerLine: {
+            flex: 1,
+            height: "1px",
+            backgroundColor: "var(--color-border)",
+        },
+        searchBox: {
+            display: "flex",
+            gap: "8px",
+        },
+        searchInput: {
+            flex: 1,
+            padding: "12px 16px",
+            backgroundColor: "var(--color-card)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "12px",
+            color: "var(--color-foreground)",
+            fontSize: "15px",
+            outline: "none",
+        },
+        searchBtn: {
+            padding: "12px 20px",
+            backgroundColor: "#0095F6",
+            color: "white",
+            border: "none",
+            borderRadius: "12px",
+            fontSize: "14px",
+            fontWeight: 500,
+            cursor: "pointer",
+        },
+        searchError: {
+            marginTop: "12px",
+            padding: "12px",
+            backgroundColor: "rgba(239, 68, 68, 0.1)",
+            borderRadius: "8px",
+            color: "#ef4444",
+            fontSize: "13px",
+            textAlign: "center" as const,
+        },
+        searchResult: {
+            marginTop: "16px",
+            padding: "16px",
+            backgroundColor: "var(--color-card)",
+            borderRadius: "12px",
+            border: "1px solid var(--color-border)",
+        },
+        addBtn: {
+            marginTop: "12px",
+            width: "100%",
+            padding: "12px",
+            backgroundColor: "#0095F6",
+            color: "white",
+            border: "none",
+            borderRadius: "10px",
+            fontSize: "14px",
+            fontWeight: 500,
+            cursor: "pointer",
+        },
+        paymentCard: {
+            backgroundColor: "var(--color-card)",
+            borderRadius: "12px",
+            border: "1px solid var(--color-border)",
+            padding: "16px",
+            marginTop: "12px",
+        },
+        paymentTitle: {
+            fontSize: "14px",
+            fontWeight: 600,
+            marginBottom: "12px",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+        },
+        paymentRow: {
+            display: "flex",
+            justifyContent: "space-between",
+            padding: "8px 0",
+            fontSize: "14px",
+        },
+        paymentLabel: {
+            color: "var(--color-muted)",
+        },
+        paymentValue: {
+            fontWeight: 500,
+        },
+    };
+
+    if (isLoading) {
         return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <div style={styles.page}>
+                <MobileNav />
+                <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    minHeight: "50vh"
+                }}>
+                    <div style={{
+                        width: "32px",
+                        height: "32px",
+                        border: "3px solid var(--color-border)",
+                        borderTopColor: "#0095F6",
+                        borderRadius: "50%",
+                        animation: "spin 1s linear infinite",
+                    }} />
+                </div>
             </div>
         );
     }
 
-    return (
-        <div className="min-h-screen pb-20 md:pb-0 md:pl-64">
-            <Sidebar />
+    if (!group) return null;
 
-            <main className="max-w-2xl mx-auto">
+    return (
+        <div style={styles.page}>
+            <MobileNav />
+
+            <main style={styles.main}>
                 {/* Header */}
-                <div className="sticky top-0 z-40 bg-background border-b border-border">
-                    <div className="flex items-center justify-between p-4">
-                        <div className="flex items-center gap-3">
-                            <Link
-                                href="/dashboard"
-                                className="text-muted hover:text-foreground transition-colors"
-                            >
-                                <ArrowLeft className="w-5 h-5" />
+                <div style={styles.header}>
+                    <div style={styles.headerTop}>
+                        <div style={styles.headerLeft}>
+                            <Link href="/groups">
+                                <button style={styles.backBtn}>
+                                    <ArrowLeft size={22} />
+                                </button>
                             </Link>
                             <div>
-                                <h1 className="font-semibold">{group.name}</h1>
-                                <p className="text-xs text-muted">
-                                    {members.length} members
-                                </p>
+                                <h1 style={styles.groupTitle}>{group.name}</h1>
+                                <p style={styles.groupSubtitle}>{members.length} members</p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={copyInviteLink}
-                                className="p-2 text-muted hover:text-foreground transition-colors"
-                                title="Share invite link"
-                            >
-                                {copied ? (
-                                    <Check className="w-5 h-5 text-success" />
-                                ) : (
-                                    <Share2 className="w-5 h-5" />
-                                )}
+                        <div style={styles.headerActions}>
+                            <button onClick={() => setShowInviteModal(true)} style={styles.iconBtn}>
+                                <UserPlus size={22} />
                             </button>
-                            <Link
-                                href={`/group/${groupId}/settings`}
-                                className="p-2 text-muted hover:text-foreground transition-colors"
-                            >
-                                <Settings className="w-5 h-5" />
-                            </Link>
+                            <button onClick={copyInviteLink} style={styles.iconBtn}>
+                                {copied ? <Check size={22} color="#22c55e" /> : <Share2 size={22} />}
+                            </button>
                         </div>
                     </div>
 
-                    {/* Tabs */}
-                    <div className="flex border-b border-border">
+                    <div style={styles.tabs}>
                         {[
                             { id: "expenses" as TabType, label: "Expenses", icon: Receipt },
                             { id: "balances" as TabType, label: "Balances", icon: Calculator },
-                            { id: "settle" as TabType, label: "Settle", icon: Users },
+                            { id: "members" as TabType, label: "Members", icon: Users },
                         ].map((tab) => (
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id)}
-                                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${activeTab === tab.id
-                                        ? "text-primary border-b-2 border-primary"
-                                        : "text-muted hover:text-foreground"
-                                    }`}
+                                style={{
+                                    ...styles.tab,
+                                    ...(activeTab === tab.id ? styles.tabActive : {}),
+                                }}
                             >
-                                <tab.icon className="w-4 h-4" />
+                                <tab.icon size={16} />
                                 {tab.label}
                             </button>
                         ))}
@@ -186,82 +633,65 @@ export default function GroupDetailsPage() {
                 </div>
 
                 {/* Content */}
-                <div className="p-4">
+                <div style={styles.content}>
                     {activeTab === "expenses" && (
-                        <div className="space-y-3">
+                        <>
                             {expenses.length === 0 ? (
-                                <div className="text-center py-12">
-                                    <Receipt className="w-12 h-12 text-muted mx-auto mb-4" />
-                                    <h3 className="font-semibold mb-2">No expenses yet</h3>
-                                    <p className="text-muted text-sm mb-4">
-                                        Add your first expense to start tracking
+                                <div style={styles.emptyState}>
+                                    <Receipt size={48} style={styles.emptyIcon} strokeWidth={1} />
+                                    <h3 style={styles.emptyTitle}>No expenses yet</h3>
+                                    <p style={styles.emptyText}>
+                                        Tap + to add your first expense
                                     </p>
                                 </div>
                             ) : (
                                 expenses.map((expense) => (
-                                    <div
-                                        key={expense.id}
-                                        className="p-4 bg-card rounded-xl border border-border"
-                                    >
-                                        <div className="flex items-start justify-between">
+                                    <div key={expense.id} style={styles.card}>
+                                        <div style={styles.cardHeader}>
                                             <div>
-                                                <h3 className="font-medium">{expense.description}</h3>
-                                                <p className="text-sm text-muted mt-0.5">
+                                                <p style={styles.expenseTitle}>{expense.description}</p>
+                                                <p style={styles.expenseSubtitle}>
                                                     {getMemberName(expense.payerId)} paid
                                                 </p>
                                             </div>
-                                            <div className="text-right">
-                                                <p className="font-semibold">
-                                                    {formatCurrency(expense.amount, user?.currency)}
-                                                </p>
-                                                <p className="text-xs text-muted">
-                                                    {formatRelativeTime(expense.createdAt)}
-                                                </p>
+                                            <div>
+                                                <p style={styles.expenseAmount}>₹{expense.amount.toFixed(2)}</p>
                                             </div>
                                         </div>
                                     </div>
                                 ))
                             )}
-                        </div>
+                        </>
                     )}
 
                     {activeTab === "balances" && (
-                        <div className="space-y-3">
-                            {members.map((member) => {
-                                const balances = calculateBalances(expenses);
-                                const balance = balances.get(member.id) || 0;
+                        <div style={styles.card}>
+                            {members.map((member, index) => {
+                                const balance = calculateBalance(member.id);
                                 return (
                                     <div
                                         key={member.id}
-                                        className="flex items-center justify-between p-4 bg-card rounded-xl border border-border"
+                                        style={{
+                                            ...styles.memberRow,
+                                            ...(index === members.length - 1 ? styles.memberRowLast : {}),
+                                        }}
                                     >
-                                        <div className="flex items-center gap-3">
-                                            <Avatar
-                                                src={member.profilePicture}
-                                                firstName={member.firstName}
-                                                lastName={member.lastName}
-                                                size="sm"
-                                            />
-                                            <div>
-                                                <p className="font-medium">
-                                                    {member.firstName} {member.lastName}
-                                                </p>
-                                                {member.id === user?.id && (
-                                                    <p className="text-xs text-muted">You</p>
-                                                )}
-                                            </div>
+                                        <div style={styles.memberAvatar}>
+                                            {member.firstName?.[0] || "U"}
+                                        </div>
+                                        <div style={styles.memberInfo}>
+                                            <p style={styles.memberName}>
+                                                {member.firstName} {member.lastName}
+                                                {member.id === user?.id && " (You)"}
+                                            </p>
                                         </div>
                                         <p
-                                            className={`font-semibold ${balance > 0
-                                                    ? "text-success"
-                                                    : balance < 0
-                                                        ? "text-danger"
-                                                        : "text-muted"
-                                                }`}
+                                            style={{
+                                                ...styles.balance,
+                                                ...(balance > 0 ? styles.balancePositive : balance < 0 ? styles.balanceNegative : styles.balanceZero),
+                                            }}
                                         >
-                                            {balance === 0
-                                                ? "Settled"
-                                                : `${balance > 0 ? "+" : ""}${formatCurrency(balance, user?.currency)}`}
+                                            {balance === 0 ? "Settled" : `${balance > 0 ? "+" : ""}₹${Math.abs(balance).toFixed(2)}`}
                                         </p>
                                     </div>
                                 );
@@ -269,55 +699,130 @@ export default function GroupDetailsPage() {
                         </div>
                     )}
 
-                    {activeTab === "settle" && (
-                        <div className="space-y-3">
-                            {transactions.length === 0 ? (
-                                <div className="text-center py-12">
-                                    <Check className="w-12 h-12 text-success mx-auto mb-4" />
-                                    <h3 className="font-semibold mb-2">All settled up!</h3>
-                                    <p className="text-muted text-sm">
-                                        No pending transactions in this group
-                                    </p>
-                                </div>
-                            ) : (
-                                transactions.map((t, i) => (
-                                    <div
-                                        key={i}
-                                        className="p-4 bg-card rounded-xl border border-border"
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <Avatar
-                                                firstName={getMemberName(t.from)}
-                                                size="sm"
-                                            />
-                                            <div className="flex-1">
-                                                <p className="font-medium">
-                                                    {getMemberName(t.from)}{" "}
-                                                    <span className="text-muted">pays</span>{" "}
-                                                    {getMemberName(t.to)}
-                                                </p>
-                                                <p className="text-lg font-bold text-primary">
-                                                    {formatCurrency(t.amount, user?.currency)}
-                                                </p>
-                                            </div>
-                                        </div>
+                    {activeTab === "members" && (
+                        <div style={styles.card}>
+                            {members.map((member, index) => (
+                                <div
+                                    key={member.id}
+                                    style={{
+                                        ...styles.memberRow,
+                                        ...(index === members.length - 1 ? styles.memberRowLast : {}),
+                                    }}
+                                >
+                                    <div style={styles.memberAvatar}>
+                                        {member.firstName?.[0] || "U"}
                                     </div>
-                                ))
-                            )}
+                                    <div style={styles.memberInfo}>
+                                        <p style={styles.memberName}>
+                                            {member.firstName} {member.lastName}
+                                            {member.id === group.createdBy && " 👑"}
+                                        </p>
+                                        <p style={styles.memberUsername}>@{member.username}</p>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>
 
                 {/* FAB */}
-                <button
-                    onClick={() => setShowExpenseModal(true)}
-                    className="fixed bottom-24 right-4 md:bottom-8 md:right-8 w-14 h-14 bg-primary text-white rounded-full shadow-lg hover:bg-primary-hover transition-all flex items-center justify-center"
-                >
-                    <Plus className="w-6 h-6" />
-                </button>
+                <Link href={`/group/${groupId}/add-expense`}>
+                    <button style={styles.fab}>
+                        <Plus size={24} />
+                    </button>
+                </Link>
             </main>
 
-            <BottomNav />
+            {/* Invite Modal */}
+            {showInviteModal && (
+                <div style={styles.modal} onClick={() => setShowInviteModal(false)}>
+                    <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+                        <div style={styles.modalHeader}>
+                            <h2 style={styles.modalTitle}>Invite Members</h2>
+                            <button style={styles.closeBtn} onClick={() => setShowInviteModal(false)}>
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Invite Link */}
+                        <div style={styles.inviteSection}>
+                            <p style={styles.inviteLabel}>Share Invite Code</p>
+                            <div style={styles.inviteCode}>
+                                <span style={styles.codeText}>{group.inviteCode}</span>
+                                <button style={styles.copyBtn} onClick={copyInviteCode}>
+                                    {copied ? <Check size={14} /> : <Copy size={14} />}
+                                    {copied ? "Copied!" : "Copy"}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style={styles.inviteSection}>
+                            <p style={styles.inviteLabel}>Share Link</p>
+                            <div style={styles.inviteCode}>
+                                <Link2 size={18} color="var(--color-muted)" />
+                                <span style={{ flex: 1, fontSize: "13px", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                    {window.location.origin}/join/{group.inviteCode}
+                                </span>
+                                <button style={styles.copyBtn} onClick={copyInviteLink}>
+                                    {copied ? "Copied!" : "Copy"}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style={styles.divider}>
+                            <div style={styles.dividerLine} />
+                            <span style={{ fontSize: "13px", color: "var(--color-muted)" }}>or add by username</span>
+                            <div style={styles.dividerLine} />
+                        </div>
+
+                        {/* Search by Username */}
+                        <div style={styles.searchBox}>
+                            <input
+                                type="text"
+                                placeholder="Enter username"
+                                value={usernameSearch}
+                                onChange={(e) => setUsernameSearch(e.target.value)}
+                                style={styles.searchInput}
+                                onKeyPress={(e) => e.key === "Enter" && searchByUsername()}
+                            />
+                            <button
+                                style={styles.searchBtn}
+                                onClick={searchByUsername}
+                                disabled={isSearching}
+                            >
+                                {isSearching ? "..." : <Search size={18} />}
+                            </button>
+                        </div>
+
+                        {searchError && <p style={styles.searchError}>{searchError}</p>}
+
+                        {searchResult && (
+                            <div style={styles.searchResult}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                                    <div style={styles.memberAvatar}>
+                                        {searchResult.firstName?.[0] || "U"}
+                                    </div>
+                                    <div>
+                                        <p style={{ fontWeight: 500 }}>
+                                            {searchResult.firstName} {searchResult.lastName}
+                                        </p>
+                                        <p style={{ fontSize: "13px", color: "var(--color-muted)" }}>
+                                            @{searchResult.username}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    style={{ ...styles.addBtn, opacity: isAddingMember ? 0.7 : 1 }}
+                                    onClick={addMemberByUsername}
+                                    disabled={isAddingMember}
+                                >
+                                    {isAddingMember ? "Adding..." : "Add to Group"}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
