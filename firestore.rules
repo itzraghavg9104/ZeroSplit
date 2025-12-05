@@ -18,6 +18,11 @@ service cloud.firestore {
       return request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
     }
     
+    // Helper function to check if user is the group owner
+    function isGroupOwner(groupId) {
+      return request.auth.uid == get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy;
+    }
+    
     // ==================== USERS ====================
     match /users/{userId} {
       // Users can read their own profile
@@ -67,8 +72,10 @@ service cloud.firestore {
       // Expense creator or group members can update
       allow update: if isAuthenticated() && isGroupMember(resource.data.groupId);
       
-      // Only expense creator can delete
-      allow delete: if isAuthenticated() && request.auth.uid == resource.data.createdBy;
+      // Only expense creator OR group owner can delete
+      allow delete: if isAuthenticated() && (
+        request.auth.uid == resource.data.createdBy || isGroupOwner(resource.data.groupId)
+      );
     }
     
     // ==================== SETTLEMENTS ====================
@@ -87,8 +94,10 @@ service cloud.firestore {
         && (request.auth.uid == resource.data.fromUser 
             || request.auth.uid == resource.data.toUser);
       
-      // Only creator can delete
-      allow delete: if isAuthenticated() && request.auth.uid == resource.data.createdBy;
+      // Only creator or group owner can delete
+      allow delete: if isAuthenticated() && (
+        request.auth.uid == resource.data.createdBy || isGroupOwner(resource.data.groupId)
+      );
     }
     
     // ==================== ACTIVITIES ====================
@@ -101,8 +110,11 @@ service cloud.firestore {
       // System creates activities (via server or triggered by other writes)
       allow create: if isAuthenticated();
       
-      // No updates or deletes on activity logs
-      allow update, delete: if false;
+      // Group owner can delete activities (for cleanup)
+      allow delete: if isAuthenticated() && isGroupOwner(resource.data.groupId);
+      
+      // No updates on activity logs
+      allow update: if false;
     }
     
     // ==================== INVITATIONS ====================
@@ -120,10 +132,11 @@ service cloud.firestore {
       allow update: if isAuthenticated() 
         && (request.auth.uid == resource.data.toUserId);
       
-      // Inviter or Invited User can delete invitation (to clean up after accept/decline)
+      // Inviter, Invited User, or Group Owner can delete invitation
       allow delete: if isAuthenticated() 
         && (request.auth.uid == resource.data.invitedBy
-            || request.auth.uid == resource.data.toUserId);
+            || request.auth.uid == resource.data.toUserId
+            || isGroupOwner(resource.data.groupId));
     }
   }
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import {
-    ArrowLeft, Plus, Share2, Settings, Users, UserPlus
+    ArrowLeft, Plus, Share2, Settings, Users, UserPlus, LogOut
 } from "lucide-react";
 import {
     doc, getDoc, collection, query, where, getDocs, deleteDoc, updateDoc, onSnapshot, Timestamp
@@ -17,6 +17,7 @@ import { calculateSettlements, Settlement } from "@/utils/settlements";
 
 import InviteModal from "./components/InviteModal";
 import SettleModal from "./components/SettleModal";
+import GroupSettingsModal from "@/components/ui/GroupSettingsModal";
 
 type TabType = "expenses" | "balances" | "settle" | "members";
 
@@ -37,6 +38,7 @@ export default function GroupDetailsPage() {
     const [activeSettlement, setActiveSettlement] = useState<Settlement | null>(null);
     const [payeeDetails, setPayeeDetails] = useState<User | null>(null);
     const [showInviteModal, setShowInviteModal] = useState(false);
+    const [showSettingsModal, setShowSettingsModal] = useState(false);
 
     // Loading State
     const [isLoading, setIsLoading] = useState(true);
@@ -406,9 +408,11 @@ export default function GroupDetailsPage() {
                             <button onClick={() => setShowInviteModal(true)} style={styles.iconBtn}>
                                 <UserPlus size={24} />
                             </button>
-                            <button style={styles.iconBtn}>
-                                <Settings size={24} />
-                            </button>
+                            {user && group && user.id === group.createdBy && (
+                                <button onClick={() => setShowSettingsModal(true)} style={styles.iconBtn}>
+                                    <Settings size={24} />
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -571,12 +575,24 @@ export default function GroupDetailsPage() {
                                 </div>
                             ))}
 
-                            <button onClick={() => setShowInviteModal(true)} style={styles.addBtn}>
+                            <button
+                                onClick={() => setShowInviteModal(true)}
+                                style={{
+                                    ...styles.addBtn,
+                                    display: "flex", alignItems: "center", justifyContent: "center"
+                                }}
+                            >
                                 <Plus size={18} style={{ marginRight: "6px" }} /> Add Member
                             </button>
 
-                            <button onClick={handleLeaveGroup} style={styles.leaveBtn}>
-                                Leave Group
+                            <button
+                                onClick={handleLeaveGroup}
+                                style={{
+                                    ...styles.leaveBtn,
+                                    display: "flex", alignItems: "center", justifyContent: "center"
+                                }}
+                            >
+                                <LogOut size={18} style={{ marginRight: "6px" }} /> Leave Group
                             </button>
                         </div>
                     )}
@@ -590,7 +606,7 @@ export default function GroupDetailsPage() {
                 <Plus size={24} />
             </button>
 
-            {user && (
+            {user && group && (
                 <>
                     <InviteModal
                         isOpen={showInviteModal}
@@ -608,6 +624,12 @@ export default function GroupDetailsPage() {
                         user={user}
                         groupId={groupId}
                         groupName={group.name}
+                    />
+
+                    <GroupSettingsModal
+                        isOpen={showSettingsModal}
+                        onClose={() => setShowSettingsModal(false)}
+                        group={group}
                     />
                 </>
             )}
