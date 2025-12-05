@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, Users, DollarSign, UserPlus, Check, Clock } from "lucide-react";
-import { collection, query, where, orderBy, limit, getDocs, Timestamp, doc, updateDoc } from "firebase/firestore";
+import { collection, query, where, orderBy, limit, getDocs, Timestamp, doc, updateDoc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import MobileNav from "@/components/layout/MobileNav";
@@ -44,12 +44,12 @@ export default function ActivityPage() {
 
                 if (groupIds.length === 0) {
                     setActivities([]);
+                    setIsLoading(false);
                     return;
                 }
 
-                // 2. Fetch activities
+                // 2. Listen for activities
                 // Note: If index is missing, this might fail. Ensure composite index (groupId ASC, createdAt DESC).
-                // Querying logic:
                 let q;
                 if (groupIds.length <= 10) {
                     q = query(
@@ -67,33 +67,48 @@ export default function ActivityPage() {
                     );
                 }
 
-                const snapshot = await getDocs(q);
-                let fetchedActivities = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                })) as Activity[];
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    let fetchedActivities = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    })) as Activity[];
 
-                // Filter out cleared activities
-                if (user.activityClearedAt) {
-                    const clearedTime = user.activityClearedAt instanceof Timestamp ? user.activityClearedAt.toMillis() : 0;
-                    fetchedActivities = fetchedActivities.filter(a => {
-                        const t = a.createdAt instanceof Timestamp ? a.createdAt.toMillis() : 0;
-                        return t > clearedTime;
-                    });
-                }
+                    // Filter out cleared activities
+                    if (user.activityClearedAt) {
+                        const clearedTime = user.activityClearedAt instanceof Timestamp ? user.activityClearedAt.toMillis() : 0;
+                        fetchedActivities = fetchedActivities.filter(a => {
+                            const t = a.createdAt instanceof Timestamp ? a.createdAt.toMillis() : 0;
+                            return t > clearedTime;
+                        });
+                    }
 
-                setActivities(fetchedActivities);
+                    setActivities(fetchedActivities);
+                    setIsLoading(false);
+                }, (error) => {
+                    console.error("Error fetching activities:", error);
+                    setIsLoading(false);
+                });
+
+                return unsubscribe;
+
             } catch (error) {
-                console.error("Error fetching activities:", error);
-            } finally {
+                console.error("Error setting up activity listener:", error);
                 setIsLoading(false);
             }
         };
 
-        if (user) fetchActivities();
+        let unsubscribe: (() => void) | undefined;
+
+        if (user) {
+            fetchActivities().then(unsub => {
+                if (unsub) unsubscribe = unsub;
+            });
+        }
 
         // Mark as read on unmount
         return () => {
+            if (unsubscribe) unsubscribe();
+
             if (user) {
                 updateDoc(doc(db, "users", user.id), {
                     lastReadActivityTime: Timestamp.now()

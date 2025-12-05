@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Sun, Moon, Menu, X, ArrowRight, Users, Receipt,
-  Wallet, Zap, ChevronRight, Home, Plus, Bell, User, Mail
+  Wallet, Zap, ChevronRight, Home, Plus, Bell, User, Mail, MessageSquare, Download
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -14,6 +14,25 @@ export default function LandingPage() {
   const { user } = useAuth();
   const { resolvedTheme, setTheme, theme } = useTheme();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
 
   const toggleTheme = () => {
     if (theme === "system") {
@@ -44,13 +63,22 @@ export default function LandingPage() {
     { href: "/profile", label: "Profile", icon: User },
   ];
 
+  const getUserAvatar = () => {
+    if (user?.profilePicture) {
+      return user.profilePicture;
+    }
+    return null;
+  };
+
+  const userAvatar = getUserAvatar();
+
   const styles = {
     page: {
       minHeight: "100vh",
       backgroundColor: "var(--color-background)",
       color: "var(--color-foreground)",
       overflowX: "hidden" as const,
-      position: "relative" as const, // Ensure context for absolute positioning
+      position: "relative" as const,
     },
     header: {
       position: "fixed" as const,
@@ -58,7 +86,7 @@ export default function LandingPage() {
       left: 0,
       right: 0,
       height: "72px",
-      backgroundColor: "rgba(var(--color-background-rgb), 0.8)", // Glass effect
+      backgroundColor: "rgba(var(--color-background-rgb), 0.8)",
       backdropFilter: "blur(12px)",
       borderBottom: "1px solid var(--color-border)",
       display: "flex",
@@ -208,6 +236,10 @@ export default function LandingPage() {
       borderRadius: "24px",
       border: "1px solid var(--color-border)",
       transition: "transform 0.2s, box-shadow 0.2s",
+      textAlign: "center" as const, // Centered text
+      display: "flex",
+      flexDirection: "column" as const,
+      alignItems: "center", // Centered content
     },
     featureIcon: {
       width: "56px",
@@ -243,24 +275,38 @@ export default function LandingPage() {
       display: "flex",
       flexDirection: "column" as const,
       alignItems: "center",
-      gap: "24px",
+      gap: "32px", // Increased gap
     },
     footerLogo: {
-      height: "32px",
+      height: "48px", // Larger logo
       width: "auto",
       filter: logoFilter,
     },
-    footerContact: {
+    contactSection: {
+      display: "flex",
+      flexDirection: "column" as const,
+      alignItems: "center",
+      gap: "16px",
+    },
+    contactText: {
+      color: "var(--color-muted)",
+      fontSize: "15px",
+      textAlign: "center" as const,
+      maxWidth: "300px",
+      lineHeight: 1.5,
+    },
+    contactBtn: {
       display: "flex",
       alignItems: "center",
       gap: "8px",
-      padding: "12px 20px",
-      backgroundColor: "rgba(0, 149, 246, 0.05)",
+      padding: "12px 32px",
+      backgroundColor: "#0095F6",
+      color: "white",
       borderRadius: "50px",
-      color: "#0095F6",
-      fontSize: "14px",
-      fontWeight: 500,
+      fontSize: "15px",
+      fontWeight: 600,
       textDecoration: "none",
+      boxShadow: "0 4px 12px rgba(0, 149, 246, 0.3)",
     },
     footerCopyright: {
       fontSize: "13px",
@@ -378,6 +424,41 @@ export default function LandingPage() {
                   </Link>
                 );
               }
+
+              // Special Profile Icon Logic
+              if (item.label === "Profile") {
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: "4px",
+                      minWidth: "60px",
+                      color: "var(--color-muted)",
+                    }}
+                  >
+                    {userAvatar ? (
+                      <div style={{
+                        width: "26px",
+                        height: "26px",
+                        borderRadius: "50%",
+                        overflow: "hidden",
+                        border: "1px solid var(--color-border)",
+                        padding: "1px"
+                      }}>
+                        <img src={userAvatar} alt="Profile" style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }} />
+                      </div>
+                    ) : (
+                      <item.icon size={26} strokeWidth={1.5} />
+                    )}
+                    <span style={{ fontSize: "10px" }}>{item.label}</span>
+                  </Link>
+                )
+              }
+
               return (
                 <Link
                   key={item.href}
@@ -429,13 +510,13 @@ export default function LandingPage() {
         width: "100%",
         height: "100%",
         zIndex: 0,
-        pointerEvents: "auto", // Important for interaction
+        pointerEvents: "auto",
       }}>
         <DotGrid
           baseColor={dotBaseColor}
           activeColor={dotActiveColor}
           gap={32}
-          dotSize={4} // Increased size
+          dotSize={4}
           proximity={150}
           shockRadius={200}
         />
@@ -509,6 +590,27 @@ export default function LandingPage() {
                 </Link>
               </>
             )}
+
+            {/* Install App Button (Mobile Menu) */}
+            {deferredPrompt && (
+              <button
+                onClick={() => {
+                  handleInstallClick();
+                  setIsMenuOpen(false);
+                }}
+                style={{
+                  ...styles.secondaryBtn,
+                  width: "100%",
+                  justifyContent: "center",
+                  marginTop: "16px",
+                  backgroundColor: "var(--color-card)",
+                  fontSize: "15px"
+                }}
+              >
+                <Download size={20} />
+                Install App
+              </button>
+            )}
           </div>
         </>
       )}
@@ -539,6 +641,32 @@ export default function LandingPage() {
               </Link>
             )}
           </div>
+
+          {/* Install App Button (Hero) */}
+          {deferredPrompt && (
+            <div style={{ marginTop: "24px", display: "flex", justifyContent: "center" }}>
+              <button
+                onClick={handleInstallClick}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "10px 20px",
+                  backgroundColor: "rgba(0, 149, 246, 0.1)",
+                  color: "#0095F6",
+                  border: "1px solid rgba(0, 149, 246, 0.2)",
+                  borderRadius: "50px",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  transition: "background-color 0.2s"
+                }}
+              >
+                <Download size={18} />
+                Install App
+              </button>
+            </div>
+          )}
         </section>
 
         {/* Features */}
@@ -566,13 +694,13 @@ export default function LandingPage() {
           <div style={styles.footerContent}>
             <img src="/logoFull.png" alt="ZeroSplit" style={styles.footerLogo} />
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              <a href="mailto:contact.zerosplit@gmail.com" style={styles.footerContact}>
+            <div style={styles.contactSection}>
+              <p style={styles.contactText}>
+                Having any trouble or have a feedback or suggestion?
+              </p>
+              <a href="mailto:contact.zerosplit@gmail.com" style={styles.contactBtn}>
                 <Mail size={16} />
                 Contact Us
-              </a>
-              <a href="mailto:contact.zerosplit@gmail.com?subject=Feedback%20or%20Suggestion" style={{ ...styles.footerContact, backgroundColor: "transparent", border: "1px solid rgba(0, 149, 246, 0.2)" }}>
-                <span style={{ fontSize: "14px" }}>Feedback or Suggestion</span>
               </a>
             </div>
 

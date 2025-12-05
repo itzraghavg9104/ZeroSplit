@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, TrendingUp, TrendingDown, Users, ChevronRight, Mail } from "lucide-react";
+import { Plus, TrendingUp, TrendingDown, Users, ChevronRight, Mail, AlertTriangle } from "lucide-react";
 import { collection, query, where, getDocs, onSnapshot, arrayUnion, deleteDoc, doc, updateDoc, Timestamp, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
@@ -420,6 +420,44 @@ export default function DashboardPage() {
                     </h1>
                     <p style={styles.greetingSubtitle}>Here&apos;s your balance summary</p>
                 </div>
+
+                {/* Payment Reminder */}
+                {(!user.paymentDetails?.upiId && !user.paymentDetails?.bankAccountNumber) && (
+                    <div style={{
+                        marginBottom: "24px",
+                        padding: "16px",
+                        backgroundColor: "rgba(234, 179, 8, 0.1)", // Yellow tint
+                        border: "1px solid rgba(234, 179, 8, 0.2)",
+                        borderRadius: "12px",
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: "12px"
+                    }}>
+                        <AlertTriangle size={20} color="#ca8a04" style={{ marginTop: "2px" }} />
+                        <div style={{ flex: 1 }}>
+                            <p style={{ fontWeight: 600, color: "#a16207", marginBottom: "4px" }}>
+                                Payment details missing
+                            </p>
+                            <p style={{ fontSize: "13px", color: "#a16207", marginBottom: "8px" }}>
+                                Your friends won&apos;t be able to settle up directly until you add your payment info.
+                            </p>
+                            <Link href="/onboarding">
+                                <button style={{
+                                    backgroundColor: "#ca8a04",
+                                    color: "white",
+                                    border: "none",
+                                    padding: "6px 12px",
+                                    borderRadius: "8px",
+                                    fontSize: "12px",
+                                    fontWeight: 600,
+                                    cursor: "pointer"
+                                }}>
+                                    Add Details
+                                </button>
+                            </Link>
+                        </div>
+                    </div>
+                )}
 
                 {/* Pending Invites */}
                 {invites.length > 0 && (
