@@ -178,6 +178,10 @@ export default function ActivityPage() {
                 return Check;
             case "group_created":
                 return Users;
+            case "joined_group":
+                return UserPlus;
+            case "left_group": // Fallback or add UserMinus if available (Users for now)
+                return Users;
             default:
                 return Bell;
         }

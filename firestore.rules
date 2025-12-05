@@ -106,23 +106,24 @@ service cloud.firestore {
     }
     
     // ==================== INVITATIONS ====================
-    match /invitations/{invitationId} {
-      // Anyone authenticated can read invitations sent to them
+    match /invites/{invitationId} {
+      // Anyone authenticated can read invitations sent to them OR if they are a group member
       allow read: if isAuthenticated() 
-        && (request.auth.uid == resource.data.invitedUserId
-            || resource.data.invitedEmail == request.auth.token.email
-            || request.auth.uid == resource.data.invitedBy);
+        && (request.auth.uid == resource.data.toUserId
+            || request.auth.uid == resource.data.invitedBy
+            || isGroupMember(resource.data.groupId));
       
       // Group members can create invitations
       allow create: if isAuthenticated();
       
       // Invited user can update (accept/decline)
       allow update: if isAuthenticated() 
-        && (request.auth.uid == resource.data.invitedUserId
-            || resource.data.invitedEmail == request.auth.token.email);
+        && (request.auth.uid == resource.data.toUserId);
       
-      // Inviter can delete invitation
-      allow delete: if isAuthenticated() && request.auth.uid == resource.data.invitedBy;
+      // Inviter or Invited User can delete invitation (to clean up after accept/decline)
+      allow delete: if isAuthenticated() 
+        && (request.auth.uid == resource.data.invitedBy
+            || request.auth.uid == resource.data.toUserId);
     }
   }
 }
