@@ -8,9 +8,11 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import MobileNav from "@/components/layout/MobileNav";
 
+import { logActivity, ActivityType } from "@/utils/activity";
+
 interface Activity {
     id: string;
-    type: "expense_added" | "expense_updated" | "member_joined" | "settlement" | "group_created";
+    type: ActivityType;
     message: string;
     groupId?: string;
     groupName?: string;
