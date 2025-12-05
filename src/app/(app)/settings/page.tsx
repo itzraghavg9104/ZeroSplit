@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ArrowLeft, Sun, Moon, Bell, Globe, Shield, HelpCircle, ChevronRight, Smartphone } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
@@ -8,9 +8,53 @@ import { useTheme } from "@/contexts/ThemeContext";
 import MobileNav from "@/components/layout/MobileNav";
 
 export default function SettingsPage() {
-    const { user } = useAuth();
     const { theme, setTheme, resolvedTheme } = useTheme();
+    const { user, updateProfile } = useAuth();
     const [notifications, setNotifications] = useState(true);
+    const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+    const [showCurrencyModal, setShowCurrencyModal] = useState(false);
+    const [updatingCurrency, setUpdatingCurrency] = useState(false);
+
+    const currencies = [
+        { code: "INR", symbol: "₹", name: "Indian Rupee" },
+        { code: "USD", symbol: "$", name: "US Dollar" },
+        { code: "EUR", symbol: "€", name: "Euro" },
+        { code: "GBP", symbol: "£", name: "British Pound" },
+        { code: "JPY", symbol: "¥", name: "Japanese Yen" }
+    ];
+
+    useEffect(() => {
+        const handler = (e: any) => {
+            e.preventDefault();
+            setDeferredPrompt(e);
+        };
+        window.addEventListener("beforeinstallprompt", handler);
+        return () => window.removeEventListener("beforeinstallprompt", handler);
+    }, []);
+
+    const handleInstallClick = async () => {
+        if (!deferredPrompt) {
+            alert("App is already installed or not available for installation.");
+            return;
+        }
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === "accepted") {
+            setDeferredPrompt(null);
+        }
+    };
+
+    const handleCurrencyChange = async (currencyCode: string) => {
+        setUpdatingCurrency(true);
+        try {
+            await updateProfile({ currency: currencyCode });
+            setShowCurrencyModal(false);
+        } catch (error) {
+            console.error("Error updating currency:", error);
+        } finally {
+            setUpdatingCurrency(false);
+        }
+    };
 
     const styles = {
         page: {
@@ -205,65 +249,115 @@ export default function SettingsPage() {
                     </div>
                 </div>
 
-                {/* Notifications */}
-                <div style={styles.section}>
-                    <p style={styles.sectionTitle}>Notifications</p>
-                    <div style={styles.card}>
-                        <div style={{ ...styles.row, ...styles.rowLast }}>
-                            <div style={styles.rowLeft}>
-                                <div style={styles.rowIcon}>
-                                    <Bell size={20} color="#0095F6" />
-                                </div>
-                                <div>
-                                    <p style={styles.rowLabel}>Push Notifications</p>
-                                </div>
-                            </div>
-                            <button
-                                style={{
-                                    ...styles.toggle,
-                                    backgroundColor: notifications ? "#0095F6" : "var(--color-border)",
-                                }}
-                                onClick={() => setNotifications(!notifications)}
-                            >
-                                <div
-                                    style={{
-                                        ...styles.toggleKnob,
-                                        left: notifications ? "24px" : "2px",
-                                    }}
-                                />
-                            </button>
-                        </div>
-                    </div>
-                </div>
+
 
                 {/* Preferences */}
                 <div style={styles.section}>
                     <p style={styles.sectionTitle}>Preferences</p>
                     <div style={styles.card}>
-                        <div style={styles.row}>
-                            <div style={styles.rowLeft}>
-                                <div style={styles.rowIcon}>
-                                    <Globe size={20} color="#0095F6" />
+                        <button
+                            onClick={() => setShowCurrencyModal(true)}
+                            style={{ width: "100%", background: "none", border: "none", cursor: "pointer", textAlign: "left", color: "inherit", padding: 0 }}
+                        >
+                            <div style={styles.row}>
+                                <div style={styles.rowLeft}>
+                                    <div style={styles.rowIcon}>
+                                        <Globe size={20} color="#0095F6" />
+                                    </div>
+                                    <div>
+                                        <p style={styles.rowLabel}>Currency</p>
+                                        <p style={styles.rowValue}>{user?.currency || "INR"}</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p style={styles.rowLabel}>Currency</p>
-                                    <p style={styles.rowValue}>{user?.currency || "INR"}</p>
-                                </div>
+                                <ChevronRight size={20} color="var(--color-muted)" />
                             </div>
-                            <ChevronRight size={20} color="var(--color-muted)" />
-                        </div>
-                        <div style={{ ...styles.row, ...styles.rowLast }}>
-                            <div style={styles.rowLeft}>
-                                <div style={styles.rowIcon}>
-                                    <Smartphone size={20} color="#0095F6" />
+                        </button>
+                        <button
+                            onClick={handleInstallClick}
+                            style={{ width: "100%", background: "none", border: "none", cursor: "pointer", textAlign: "left", color: "inherit", padding: 0 }}
+                        >
+                            <div style={{ ...styles.row, ...styles.rowLast }}>
+                                <div style={styles.rowLeft}>
+                                    <div style={styles.rowIcon}>
+                                        <Smartphone size={20} color="#0095F6" />
+                                    </div>
+                                    <div>
+                                        <p style={styles.rowLabel}>Install App</p>
+                                        <p style={styles.rowValue}>Add to home screen</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p style={styles.rowLabel}>Install App</p>
-                                    <p style={styles.rowValue}>Add to home screen</p>
-                                </div>
+                                <ChevronRight size={20} color="var(--color-muted)" />
                             </div>
-                            <ChevronRight size={20} color="var(--color-muted)" />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Currency Modal */}
+                {showCurrencyModal && (
+                    <div style={{
+                        position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)",
+                        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100
+                    }} onClick={() => setShowCurrencyModal(false)}>
+                        <div style={{
+                            backgroundColor: "var(--color-card)", width: "300px", borderRadius: "16px",
+                            padding: "20px", maxHeight: "80vh", overflowY: "auto"
+                        }} onClick={e => e.stopPropagation()}>
+                            <h3 style={{ marginBottom: "16px", fontWeight: 600 }}>Select Currency</h3>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                                {currencies.map(c => (
+                                    <button
+                                        key={c.code}
+                                        onClick={() => handleCurrencyChange(c.code)}
+                                        disabled={updatingCurrency}
+                                        style={{
+                                            padding: "12px",
+                                            borderRadius: "8px",
+                                            border: "1px solid var(--color-border)",
+                                            backgroundColor: user?.currency === c.code ? "#0095F6" : "transparent",
+                                            color: user?.currency === c.code ? "white" : "var(--color-foreground)",
+                                            textAlign: "left",
+                                            cursor: "pointer",
+                                            display: "flex",
+                                            justifyContent: "space-between"
+                                        }}
+                                    >
+                                        <span>{c.name} ({c.symbol})</span>
+                                        <span style={{ fontWeight: 600 }}>{c.code}</span>
+                                    </button>
+                                ))}
+                            </div>
+                            <button
+                                onClick={() => setShowCurrencyModal(false)}
+                                style={{
+                                    marginTop: "16px", width: "100%", padding: "10px",
+                                    borderRadius: "8px", border: "none", background: "var(--color-secondary)",
+                                    cursor: "pointer"
+                                }}
+                            >
+                                Cancel
+                            </button>
                         </div>
+                    </div>
+                )}
+
+                {/* Security */}
+                <div style={styles.section}>
+                    <p style={styles.sectionTitle}>Security</p>
+                    <div style={styles.card}>
+                        <Link href="/settings/security" style={{ textDecoration: "none", color: "inherit" }}>
+                            <div style={{ ...styles.row, ...styles.rowLast }}>
+                                <div style={styles.rowLeft}>
+                                    <div style={styles.rowIcon}>
+                                        <Shield size={20} color="#0095F6" />
+                                    </div>
+                                    <div>
+                                        <p style={styles.rowLabel}>Security Settings</p>
+                                        <p style={styles.rowValue}>Password, Verification</p>
+                                    </div>
+                                </div>
+                                <ChevronRight size={20} color="var(--color-muted)" />
+                            </div>
+                        </Link>
                     </div>
                 </div>
 
@@ -271,28 +365,33 @@ export default function SettingsPage() {
                 <div style={styles.section}>
                     <p style={styles.sectionTitle}>Support</p>
                     <div style={styles.card}>
-                        <div style={styles.row}>
-                            <div style={styles.rowLeft}>
-                                <div style={styles.rowIcon}>
-                                    <HelpCircle size={20} color="#0095F6" />
+                        <Link href="/settings/support" style={{ textDecoration: "none", color: "inherit" }}>
+                            <div style={styles.row}>
+                                <div style={styles.rowLeft}>
+                                    <div style={styles.rowIcon}>
+                                        <HelpCircle size={20} color="#0095F6" />
+                                    </div>
+                                    <div>
+                                        <p style={styles.rowLabel}>Help & Support</p>
+                                        <p style={styles.rowValue}>FAQs, Contact Us</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p style={styles.rowLabel}>Help Center</p>
-                                </div>
+                                <ChevronRight size={20} color="var(--color-muted)" />
                             </div>
-                            <ChevronRight size={20} color="var(--color-muted)" />
-                        </div>
-                        <div style={{ ...styles.row, ...styles.rowLast }}>
-                            <div style={styles.rowLeft}>
-                                <div style={styles.rowIcon}>
-                                    <Shield size={20} color="#0095F6" />
+                        </Link>
+                        <Link href="/settings/privacy" style={{ textDecoration: "none", color: "inherit" }}>
+                            <div style={{ ...styles.row, ...styles.rowLast }}>
+                                <div style={styles.rowLeft}>
+                                    <div style={styles.rowIcon}>
+                                        <Shield size={20} color="#0095F6" />
+                                    </div>
+                                    <div>
+                                        <p style={styles.rowLabel}>Privacy Policy</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p style={styles.rowLabel}>Privacy Policy</p>
-                                </div>
+                                <ChevronRight size={20} color="var(--color-muted)" />
                             </div>
-                            <ChevronRight size={20} color="var(--color-muted)" />
-                        </div>
+                        </Link>
                     </div>
                 </div>
 

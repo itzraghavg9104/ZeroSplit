@@ -9,6 +9,7 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { Group, User } from "@/types";
 import MobileNav from "@/components/layout/MobileNav";
+import { logActivity } from "@/utils/activity";
 
 export default function AddExpensePage() {
     const router = useRouter();
@@ -78,6 +79,8 @@ export default function AddExpensePage() {
         e.preventDefault();
         if (!user || !group) return;
 
+        console.log("Submitting expense form...");
+
         const amount = parseFloat(formData.amount);
         if (!formData.description.trim()) {
             setError("Please enter a description");
@@ -110,7 +113,8 @@ export default function AddExpensePage() {
 
             // Allow a small margin of error for floating point math
             if (Math.abs(totalCustomAmount - amount) > 0.05) {
-                setError(`Total split amount (₹${totalCustomAmount.toFixed(2)}) must equal expense amount (₹${amount.toFixed(2)})`);
+                const currencySymbol = user.currency === "USD" ? "$" : user.currency === "EUR" ? "€" : user.currency === "GBP" ? "£" : user.currency === "JPY" ? "¥" : "₹";
+                setError(`Total split amount (${currencySymbol}${totalCustomAmount.toFixed(2)}) must equal expense amount (${currencySymbol}${amount.toFixed(2)})`);
                 return;
             }
             splits = customSplits;
@@ -138,7 +142,20 @@ export default function AddExpensePage() {
                 updatedAt: Timestamp.now(),
             };
 
+            console.log("Saving expense data:", expenseData);
+
             await addDoc(collection(db, "expenses"), expenseData);
+
+            // Log Activity
+            await logActivity(
+                user.id,
+                "expense_added",
+                `added "${formData.description}"`,
+                groupId,
+                group.name
+            );
+
+            console.log("Expense saved successfully!");
             router.push(`/group/${groupId}`);
         } catch (err) {
             console.error("Error adding expense:", err);
@@ -253,39 +270,42 @@ export default function AddExpensePage() {
             borderRadius: "12px",
             border: "1px solid var(--color-border)",
             cursor: "pointer",
+            transition: "all 0.2s",
         },
         payerOptionSelected: {
-            borderColor: "#0095F6",
-            backgroundColor: "rgba(0, 149, 246, 0.05)",
+            borderColor: "var(--color-foreground)",
+            backgroundColor: "var(--color-card)",
         },
         avatar: {
-            width: "40px",
-            height: "40px",
+            width: "36px",
+            height: "36px",
             borderRadius: "50%",
-            background: "linear-gradient(135deg, #0095F6, #00D4AA)",
+            backgroundColor: "var(--color-muted)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             color: "white",
             fontWeight: 600,
             fontSize: "14px",
+            objectFit: "cover" as const,
         },
         memberName: {
             flex: 1,
             fontWeight: 500,
+            fontSize: "15px",
         },
         checkIcon: {
-            width: "24px",
-            height: "24px",
+            width: "20px",
+            height: "20px",
             borderRadius: "50%",
-            border: "2px solid var(--color-border)",
+            border: "2px solid var(--color-muted)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
         },
         checkIconSelected: {
-            backgroundColor: "#0095F6",
-            borderColor: "#0095F6",
+            backgroundColor: "var(--color-foreground)",
+            borderColor: "var(--color-foreground)",
         },
         submitBtn: {
             width: "100%",
@@ -332,13 +352,13 @@ export default function AddExpensePage() {
             gap: "6px",
         },
         toggleBtnActive: {
-            backgroundColor: "var(--color-card)",
-            color: "var(--color-foreground)",
+            backgroundColor: "var(--color-foreground)",
+            color: "var(--color-background)",
             fontWeight: 600,
-            boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
+            boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
         },
         customAmountInput: {
-            width: "100px",
+            width: "90px",
             padding: "8px",
             borderRadius: "8px",
             border: "1px solid var(--color-border)",
@@ -402,12 +422,13 @@ export default function AddExpensePage() {
 
                     <div style={styles.card}>
                         <div style={styles.inputGroup}>
-                            <label style={styles.label}>Amount (₹)</label>
+                            <label style={styles.label}>Amount ({user?.currency && user.currency !== "INR" ? (user.currency === "USD" ? "$" : user.currency === "EUR" ? "€" : user.currency === "GBP" ? "£" : user.currency === "JPY" ? "¥" : user.currency) : "₹"})</label>
                             <input
                                 type="number"
                                 placeholder="0.00"
                                 value={formData.amount}
                                 onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
+                                onWheel={(e) => (e.target as HTMLElement).blur()}
                                 style={{ ...styles.input, ...styles.amountInput }}
                                 step="0.01"
                                 min="0"
@@ -436,7 +457,10 @@ export default function AddExpensePage() {
                                     key={member.id}
                                     style={{
                                         ...styles.payerOption,
-                                        ...(formData.payerId === member.id ? styles.payerOptionSelected : {}),
+                                        ...(formData.payerId === member.id ? {
+                                            backgroundColor: "var(--color-card)",
+                                            border: "1px solid var(--color-foreground)"
+                                        } : {}),
                                     }}
                                     onClick={() => setFormData(prev => ({ ...prev, payerId: member.id }))}
                                 >
@@ -444,7 +468,7 @@ export default function AddExpensePage() {
                                         <img
                                             src={member.profilePicture}
                                             alt={member.firstName}
-                                            style={{ ...styles.avatar, background: "none" }}
+                                            style={{ ...styles.avatar, backgroundColor: "transparent" }}
                                         />
                                     ) : (
                                         <div style={styles.avatar}>
@@ -457,10 +481,14 @@ export default function AddExpensePage() {
                                     </span>
                                     <div style={{
                                         ...styles.checkIcon,
-                                        ...(formData.payerId === member.id ? styles.checkIconSelected : {}),
+                                        ...(formData.payerId === member.id ? {
+                                            backgroundColor: "var(--color-foreground)",
+                                            border: "1px solid var(--color-foreground)",
+                                            color: "var(--color-background)"
+                                        } : {}),
                                     }}>
                                         {formData.payerId === member.id && (
-                                            <Check size={14} color="white" />
+                                            <Check size={12} color="var(--color-background)" strokeWidth={3} />
                                         )}
                                     </div>
                                 </div>
@@ -520,7 +548,7 @@ export default function AddExpensePage() {
                                         <img
                                             src={member.profilePicture}
                                             alt={member.firstName}
-                                            style={{ ...styles.avatar, background: "none" }}
+                                            style={{ ...styles.avatar, backgroundColor: "transparent" }}
                                         />
                                     ) : (
                                         <div style={styles.avatar}>
@@ -537,7 +565,7 @@ export default function AddExpensePage() {
                                             ...(selectedMembers.includes(member.id) ? styles.checkIconSelected : {}),
                                         }}>
                                             {selectedMembers.includes(member.id) && (
-                                                <Check size={14} color="white" />
+                                                <Check size={12} color="var(--color-background)" strokeWidth={3} />
                                             )}
                                         </div>
                                     ) : (
@@ -550,6 +578,7 @@ export default function AddExpensePage() {
                                                     onChange={(e) => handleCustomAmountChange(member.id, e.target.value)}
                                                     style={styles.customAmountInput}
                                                     step="0.01"
+                                                    onWheel={(e) => (e.target as HTMLElement).blur()}
                                                 />
                                             </div>
                                         ) : (
@@ -562,7 +591,7 @@ export default function AddExpensePage() {
 
                         {formData.splitType === "equal" && selectedMembers.length > 0 && formData.amount && (
                             <p style={{ marginTop: "12px", fontSize: "14px", color: "var(--color-muted)", textAlign: "center" }}>
-                                ₹{(parseFloat(formData.amount) / selectedMembers.length).toFixed(2)} per person
+                                {user?.currency === "USD" ? "$" : user?.currency === "EUR" ? "€" : user?.currency === "GBP" ? "£" : user?.currency === "JPY" ? "¥" : "₹"}{(parseFloat(formData.amount) / selectedMembers.length).toFixed(2)} per person
                             </p>
                         )}
 

@@ -8,12 +8,16 @@ import {
     Copy, Check, UserPlus, Link2, X, Search, Wallet, CreditCard
 } from "lucide-react";
 import {
-    doc, getDoc, collection, query, where, orderBy, getDocs, updateDoc, arrayUnion, Timestamp
+    doc, getDoc, collection, query, where, orderBy, getDocs, updateDoc, deleteDoc, arrayUnion, Timestamp, onSnapshot
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { Group, Expense, User, PaymentDetails } from "@/types";
+import { addDoc } from "firebase/firestore";
 import MobileNav from "@/components/layout/MobileNav";
+import { calculateSettlements, Settlement } from "@/utils/settlements";
+
+import { logActivity } from "@/utils/activity";
 
 type TabType = "expenses" | "balances" | "settle" | "members";
 
@@ -35,7 +39,15 @@ export default function GroupDetailsPage() {
     const [group, setGroup] = useState<Group | null>(null);
     const [members, setMembers] = useState<User[]>([]);
     const [expenses, setExpenses] = useState<Expense[]>([]);
+    const [settlements, setSettlements] = useState<Settlement[]>([]);
     const [activeTab, setActiveTab] = useState<TabType>("expenses");
+
+    // Settlement Flow State
+    const [settleModalOpen, setSettleModalOpen] = useState(false);
+    const [activeSettlement, setActiveSettlement] = useState<Settlement | null>(null);
+    const [payeeDetails, setPayeeDetails] = useState<User | null>(null);
+    const [paymentMethod, setPaymentMethod] = useState<"upi" | "bank" | null>(null);
+    const [isSettling, setIsSettling] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [copied, setCopied] = useState(false);
     const [showInviteModal, setShowInviteModal] = useState(false);
@@ -46,59 +58,132 @@ export default function GroupDetailsPage() {
     const [isAddingMember, setIsAddingMember] = useState(false);
 
     useEffect(() => {
-        const fetchGroupData = async () => {
-            if (!user) return;
+        if (!user) return;
 
-            try {
-                const groupDoc = await getDoc(doc(db, "groups", groupId));
-                if (!groupDoc.exists()) {
-                    router.push("/groups");
-                    return;
-                }
-                const groupData = { id: groupDoc.id, ...groupDoc.data() } as Group;
-
-                // Check if user is a member
-                if (!groupData.members.includes(user.id)) {
-                    router.push("/groups");
-                    return;
-                }
-
-                setGroup(groupData);
-
-                // Fetch members
-                const memberDocs = await Promise.all(
-                    groupData.members.map((id) => getDoc(doc(db, "users", id)))
-                );
-                const membersData = memberDocs
-                    .filter((d) => d.exists())
-                    .map((d) => ({ id: d.id, ...d.data() } as User));
-                setMembers(membersData);
-
-                // Fetch expenses
-                try {
-                    const expensesQuery = query(
-                        collection(db, "expenses"),
-                        where("groupId", "==", groupId),
-                        orderBy("createdAt", "desc")
-                    );
-                    const expensesSnapshot = await getDocs(expensesQuery);
-                    const expensesData = expensesSnapshot.docs.map(
-                        (d) => ({ id: d.id, ...d.data() } as Expense)
-                    );
-                    setExpenses(expensesData);
-                } catch (error) {
-                    console.log("No expenses or index needed");
-                    setExpenses([]);
-                }
-            } catch (error) {
-                console.error("Error fetching group:", error);
-            } finally {
-                setIsLoading(false);
+        // Subscriber for Group Data
+        const unsubscribeGroup = onSnapshot(doc(db, "groups", groupId), async (groupDoc) => {
+            if (!groupDoc.exists()) {
+                // Group might have been deleted
+                router.push("/groups");
+                return;
             }
-        };
+            const groupData = { id: groupDoc.id, ...groupDoc.data() } as Group;
 
-        fetchGroupData();
+            // Check if user is a member
+            if (!groupData.members.includes(user.id)) {
+                router.push("/groups");
+                return;
+            }
+
+            setGroup(groupData);
+
+            // Fetch members
+            const memberDocs = await Promise.all(
+                groupData.members.map((id) => getDoc(doc(db, "users", id)))
+            );
+            const membersData = memberDocs
+                .filter((d) => d.exists())
+                .map((d) => ({ id: d.id, ...d.data() } as User));
+            setMembers(membersData);
+            setIsLoading(false);
+        }, (error) => {
+            console.error("Error fetching group:", error);
+            setIsLoading(false);
+        });
+
+        // Subscriber for Expenses
+        const expensesQuery = query(
+            collection(db, "expenses"),
+            where("groupId", "==", groupId)
+        );
+
+        const unsubscribeExpenses = onSnapshot(expensesQuery, (snapshot) => {
+            const expensesData = snapshot.docs.map(
+                (d) => ({ id: d.id, ...d.data() } as Expense)
+            ).sort((a, b) => {
+                const dateA = a.createdAt instanceof Timestamp ? a.createdAt.toMillis() : 0;
+                const dateB = b.createdAt instanceof Timestamp ? b.createdAt.toMillis() : 0;
+                return dateB - dateA;
+            });
+            setExpenses(expensesData);
+            // We need members to calculate settlements. 
+            // If members are not loaded yet, this might be empty, but it will re-render when members change.
+        }, (error) => {
+            console.error("Error fetching expenses:", error);
+        });
+
+        return () => {
+            unsubscribeGroup();
+            unsubscribeExpenses();
+        };
     }, [user, groupId, router]);
+
+    // Recalculate settlements whenever expenses or members change
+    useEffect(() => {
+        if (expenses.length > 0 && members.length > 0) {
+            const calculated = calculateSettlements(expenses, members);
+            setSettlements(calculated);
+        } else {
+            setSettlements([]);
+        }
+    }, [expenses, members]);
+
+    const handleSettleClick = async (settlement: Settlement) => {
+        setActiveSettlement(settlement);
+        setSettleModalOpen(true);
+        setPaymentMethod(null);
+
+        // Find payee details
+        const payee = members.find(m => m.id === settlement.to);
+        setPayeeDetails(payee || null);
+    };
+
+    const confirmSettlement = async () => {
+        if (!activeSettlement || !user) return;
+
+        setIsSettling(true);
+        try {
+            // Create a settlement expense
+            const settlementData = {
+                groupId,
+                description: "Settlement",
+                amount: activeSettlement.amount,
+                payerId: user.id, // I paid
+                splits: [{
+                    memberId: activeSettlement.to, // To them (100% split to payee)
+                    amount: activeSettlement.amount
+                }],
+                splitType: "equal", // Technically custom, but for 1 person active equal is same
+                createdBy: user.id,
+                createdAt: Timestamp.now(),
+                updatedAt: Timestamp.now(),
+                type: "settlement", // Custom field if schema allowed, simplifying to description for now
+            };
+
+            // Enhanced description
+            // @ts-ignore
+            settlementData.isSettlement = true; // Temporary tag if we add it to type later
+
+            await addDoc(collection(db, "expenses"), settlementData);
+
+            // Log Activity
+            await logActivity(
+                user.id,
+                "settlement",
+                `paid ${payeeDetails?.firstName} ${user.currency === "USD" ? "$" : user.currency === "EUR" ? "€" : user.currency === "GBP" ? "£" : user.currency === "JPY" ? "¥" : "₹"}${activeSettlement.amount}`,
+                groupId,
+                group?.name
+            );
+
+            setSettleModalOpen(false);
+            setActiveSettlement(null);
+        } catch (error) {
+            console.error("Error settling:", error);
+            alert("Failed to settle. Please try again.");
+        } finally {
+            setIsSettling(false);
+        }
+    };
 
     const copyInviteLink = () => {
         if (!group) return;
@@ -182,6 +267,21 @@ export default function GroupDetailsPage() {
     const getMemberName = (id: string) => {
         const member = members.find((m) => m.id === id);
         return member ? `${member.firstName} ${member.lastName}`.trim() : "Unknown";
+    };
+
+    const handleDeleteGroup = async () => {
+        if (!group || !user) return;
+        if (group.createdBy !== user.id) return;
+
+        if (!confirm("Are you sure you want to delete this group? This action cannot be undone.")) return;
+
+        try {
+            await deleteDoc(doc(db, "groups", groupId));
+            router.push("/groups");
+        } catch (error) {
+            console.error("Error deleting group:", error);
+            alert("Failed to delete group. Please try again.");
+        }
     };
 
     const calculateBalance = (memberId: string): number => {
@@ -596,6 +696,13 @@ export default function GroupDetailsPage() {
                                     <ArrowLeft size={22} />
                                 </button>
                             </Link>
+
+                            {group.image && (
+                                <div style={{ width: "48px", height: "48px", borderRadius: "12px", overflow: "hidden", marginRight: "12px" }}>
+                                    <img src={group.image} alt={group.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                </div>
+                            )}
+
                             <div>
                                 <h1 style={styles.groupTitle}>{group.name}</h1>
                                 <p style={styles.groupSubtitle}>{members.length} members</p>
@@ -622,7 +729,10 @@ export default function GroupDetailsPage() {
                                 onClick={() => setActiveTab(tab.id)}
                                 style={{
                                     ...styles.tab,
-                                    ...(activeTab === tab.id ? styles.tabActive : {}),
+                                    ...(activeTab === tab.id ? {
+                                        color: "#0095F6",
+                                        borderBottom: "2px solid #0095F6"
+                                    } : {}),
                                 }}
                             >
                                 <tab.icon size={16} />
@@ -665,38 +775,111 @@ export default function GroupDetailsPage() {
                     )}
 
                     {activeTab === "balances" && (
-                        <div style={styles.card}>
-                            {members.map((member, index) => {
-                                const balance = calculateBalance(member.id);
-                                return (
-                                    <div
-                                        key={member.id}
-                                        style={{
-                                            ...styles.memberRow,
-                                            ...(index === members.length - 1 ? styles.memberRowLast : {}),
-                                        }}
-                                    >
-                                        <div style={styles.memberAvatar}>
-                                            {member.firstName?.[0] || "U"}
-                                        </div>
-                                        <div style={styles.memberInfo}>
-                                            <p style={styles.memberName}>
-                                                {member.firstName} {member.lastName}
-                                                {member.id === user?.id && " (You)"}
-                                            </p>
-                                        </div>
-                                        <p
+                        <>
+                            {/* My Settlement Plan */}
+                            <div style={{ marginBottom: "24px" }}>
+                                <h3 style={{ fontSize: "16px", fontWeight: 600, marginBottom: "12px" }}>Settlement Plan</h3>
+                                {settlements.length === 0 ? (
+                                    <div style={{ ...styles.card, textAlign: "center", padding: "32px" }}>
+                                        <Check size={32} color="#22c55e" style={{ margin: "0 auto 12px" }} />
+                                        <p style={{ fontWeight: 500 }}>All settled up!</p>
+                                        <p style={styles.emptyText}>No pending debts in this group.</p>
+                                    </div>
+                                ) : (
+                                    <div style={styles.card}>
+                                        {settlements.map((settlement, index) => {
+                                            const isMePayer = settlement.from === user?.id;
+                                            const isMePayee = settlement.to === user?.id;
+                                            const otherPersonId = isMePayer ? settlement.to : settlement.from;
+                                            const otherPerson = members.find(m => m.id === otherPersonId);
+
+                                            // Only show settlements involving me, or show all? 
+                                            // Showing all is good for transparency, but highlight mine.
+
+                                            return (
+                                                <div
+                                                    key={index}
+                                                    style={{
+                                                        ...styles.memberRow,
+                                                        ...(index === settlements.length - 1 ? styles.memberRowLast : {}),
+                                                        opacity: (isMePayer || isMePayee) ? 1 : 0.6
+                                                    }}
+                                                >
+                                                    <div style={styles.memberAvatar}>
+                                                        {otherPerson?.firstName?.[0] || "?"}
+                                                    </div>
+                                                    <div style={styles.memberInfo}>
+                                                        <p style={styles.memberName}>
+                                                            {isMePayer ? `You owe ${otherPerson?.firstName}` : `${otherPerson?.firstName} owes you`}
+                                                        </p>
+                                                        <p style={{ fontSize: "12px", color: "var(--color-muted)" }}>
+                                                            {isMePayer ? "Click Pay to settle" : "Waiting for payment"}
+                                                        </p>
+                                                    </div>
+                                                    <div style={{ textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
+                                                        <p style={{ ...styles.balance, color: isMePayer ? "#ef4444" : "#22c55e" }}>
+                                                            ₹{settlement.amount.toFixed(2)}
+                                                        </p>
+                                                        {isMePayer && (
+                                                            <button
+                                                                onClick={() => handleSettleClick(settlement)}
+                                                                style={{
+                                                                    backgroundColor: "#0095F6",
+                                                                    color: "white",
+                                                                    border: "none",
+                                                                    borderRadius: "6px",
+                                                                    padding: "6px 12px",
+                                                                    fontSize: "12px",
+                                                                    fontWeight: 600,
+                                                                    cursor: "pointer"
+                                                                }}
+                                                            >
+                                                                Pay
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Net Balances Summary */}
+                            <h3 style={{ fontSize: "16px", fontWeight: 600, marginBottom: "12px" }}>Net Balances</h3>
+                            <div style={styles.card}>
+                                {members.map((member, index) => {
+                                    const balance = calculateBalance(member.id);
+                                    return (
+                                        <div
+                                            key={member.id}
                                             style={{
-                                                ...styles.balance,
-                                                ...(balance > 0 ? styles.balancePositive : balance < 0 ? styles.balanceNegative : styles.balanceZero),
+                                                ...styles.memberRow,
+                                                ...(index === members.length - 1 ? styles.memberRowLast : {}),
                                             }}
                                         >
-                                            {balance === 0 ? "Settled" : `${balance > 0 ? "+" : ""}₹${Math.abs(balance).toFixed(2)}`}
-                                        </p>
-                                    </div>
-                                );
-                            })}
-                        </div>
+                                            <div style={styles.memberAvatar}>
+                                                {member.firstName?.[0] || "U"}
+                                            </div>
+                                            <div style={styles.memberInfo}>
+                                                <p style={styles.memberName}>
+                                                    {member.firstName} {member.lastName}
+                                                    {member.id === user?.id && " (You)"}
+                                                </p>
+                                            </div>
+                                            <p
+                                                style={{
+                                                    ...styles.balance,
+                                                    ...(balance > 0 ? styles.balancePositive : balance < 0 ? styles.balanceNegative : styles.balanceZero),
+                                                }}
+                                            >
+                                                {balance === 0 ? "Settled" : `${balance > 0 ? "+" : ""}${user?.currency === "USD" ? "$" : user?.currency === "EUR" ? "€" : user?.currency === "GBP" ? "£" : user?.currency === "JPY" ? "¥" : "₹"}${Math.abs(balance).toFixed(2)}`}
+                                            </p>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </>
                     )}
 
                     {activeTab === "members" && (
@@ -721,6 +904,30 @@ export default function GroupDetailsPage() {
                                     </div>
                                 </div>
                             ))}
+                            {group.createdBy === user?.id && (
+                                <div style={{ borderTop: "1px solid var(--color-border)", padding: "16px 0 0 0", marginTop: "16px" }}>
+                                    <button
+                                        onClick={handleDeleteGroup}
+                                        style={{
+                                            width: "100%",
+                                            padding: "12px",
+                                            backgroundColor: "rgba(239, 68, 68, 0.1)",
+                                            color: "#ef4444",
+                                            border: "none",
+                                            borderRadius: "10px",
+                                            fontSize: "14px",
+                                            fontWeight: 600,
+                                            cursor: "pointer",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            gap: "8px"
+                                        }}
+                                    >
+                                        Delete Group
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -818,6 +1025,176 @@ export default function GroupDetailsPage() {
                                 >
                                     {isAddingMember ? "Adding..." : "Add to Group"}
                                 </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+            {/* Settle Up Modal */}
+            {settleModalOpen && activeSettlement && payeeDetails && (
+                <div style={styles.modal} onClick={() => setSettleModalOpen(false)}>
+                    <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+                        <div style={styles.modalHeader}>
+                            <h2 style={styles.modalTitle}>Zero The Split</h2>
+                            <button style={styles.closeBtn} onClick={() => setSettleModalOpen(false)}>
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div style={{ textAlign: "center", marginBottom: "24px" }}>
+                            <p style={{ color: "var(--color-muted)", marginBottom: "4px" }}>You are paying</p>
+                            <h3 style={{ fontSize: "28px", fontWeight: 700 }}>{user?.currency === "USD" ? "$" : user?.currency === "EUR" ? "€" : user?.currency === "GBP" ? "£" : user?.currency === "JPY" ? "¥" : "₹"}{activeSettlement.amount.toFixed(2)}</h3>
+                            <p style={{ fontSize: "14px", marginTop: "4px" }}>to <strong>{payeeDetails.firstName} {payeeDetails.lastName}</strong></p>
+                        </div>
+
+                        {!paymentMethod ? (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                                <p style={{ fontSize: "14px", fontWeight: 600, marginBottom: "4px" }}>How would you like to pay?</p>
+
+                                <button
+                                    onClick={() => setPaymentMethod("upi")}
+                                    style={{
+                                        display: "flex", alignItems: "center", gap: "12px",
+                                        padding: "16px", borderRadius: "12px",
+                                        border: "1px solid var(--color-border)",
+                                        backgroundColor: "var(--color-card)",
+                                        cursor: "pointer",
+                                        textAlign: "left"
+                                    }}
+                                >
+                                    <div style={{ padding: "8px", borderRadius: "50%", backgroundColor: "#eee" }}>
+                                        <Wallet size={20} color="black" />
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <p style={{ fontWeight: 600 }}>UPI Apps</p>
+                                        <p style={{ fontSize: "12px", color: "var(--color-muted)" }}>Google Pay, PhonePe, Paytm</p>
+                                    </div>
+                                </button>
+
+                                <button
+                                    onClick={() => setPaymentMethod("bank")}
+                                    style={{
+                                        display: "flex", alignItems: "center", gap: "12px",
+                                        padding: "16px", borderRadius: "12px",
+                                        border: "1px solid var(--color-border)",
+                                        backgroundColor: "var(--color-card)",
+                                        cursor: "pointer",
+                                        textAlign: "left"
+                                    }}
+                                >
+                                    <div style={{ padding: "8px", borderRadius: "50%", backgroundColor: "#eee" }}>
+                                        <CreditCard size={20} color="black" />
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <p style={{ fontWeight: 600 }}>Bank Transfer</p>
+                                        <p style={{ fontSize: "12px", color: "var(--color-muted)" }}>IMPS / NEFT details</p>
+                                    </div>
+                                </button>
+
+                                <button
+                                    onClick={confirmSettlement}
+                                    style={{
+                                        ...styles.addBtn,
+                                        backgroundColor: "var(--color-card)",
+                                        color: "var(--color-foreground)",
+                                        border: "1px solid var(--color-border)",
+                                        marginTop: "12px"
+                                    }}
+                                >
+                                    Record as Cash Payment
+                                </button>
+                            </div>
+                        ) : paymentMethod === "upi" ? (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                                <div style={styles.card}>
+                                    <p style={{ fontSize: "12px", color: "var(--color-muted)", marginBottom: "8px" }}>PAYEE UPI ID</p>
+                                    {payeeDetails.paymentDetails?.upiId ? (
+                                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                            <span style={{ fontSize: "16px", fontWeight: 500, flex: 1 }}>
+                                                {payeeDetails.paymentDetails.upiId}
+                                            </span>
+                                            <button
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(payeeDetails.paymentDetails?.upiId || "");
+                                                    setCopied(true);
+                                                    setTimeout(() => setCopied(false), 2000);
+                                                }}
+                                                style={{ border: "none", background: "none", color: "#0095F6", fontWeight: 600 }}
+                                            >
+                                                {copied ? "COPIED" : "COPY"}
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <p style={{ color: "#ef4444", fontSize: "14px" }}>No UPI ID added by user</p>
+                                    )}
+                                </div>
+
+                                {payeeDetails.paymentDetails?.upiId && (
+                                    <a
+                                        href={`upi://pay?pa=${payeeDetails.paymentDetails.upiId}&pn=${payeeDetails.firstName}&am=${activeSettlement.amount}&cu=INR&tn=Settlement`}
+                                        style={{ textDecoration: "none" }}
+                                    >
+                                        <button style={styles.addBtn}>
+                                            Pay via UPI App
+                                        </button>
+                                    </a>
+                                )}
+
+                                <div style={{ display: "flex", gap: "12px" }}>
+                                    <button
+                                        onClick={() => setPaymentMethod(null)}
+                                        style={{
+                                            flex: 1, padding: "12px", borderRadius: "10px", border: "none",
+                                            backgroundColor: "var(--color-secondary)", cursor: "pointer"
+                                        }}
+                                    >
+                                        Back
+                                    </button>
+                                    <button
+                                        onClick={confirmSettlement}
+                                        disabled={isSettling}
+                                        style={{ ...styles.addBtn, marginTop: 0, flex: 1 }}
+                                    >
+                                        {isSettling ? "Processing..." : "Mark as Paid"}
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            // Bank Details
+                            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                                <div style={styles.card}>
+                                    <div style={{ marginBottom: "12px" }}>
+                                        <p style={styles.paymentLabel}>Account Number</p>
+                                        <p style={{ fontSize: "16px", fontWeight: 500 }}>
+                                            {payeeDetails.paymentDetails?.bankAccountNumber || "Not provided"}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p style={styles.paymentLabel}>IFSC Code</p>
+                                        <p style={{ fontSize: "16px", fontWeight: 500 }}>
+                                            {payeeDetails.paymentDetails?.ifscCode || "Not provided"}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: "flex", gap: "12px" }}>
+                                    <button
+                                        onClick={() => setPaymentMethod(null)}
+                                        style={{
+                                            flex: 1, padding: "12px", borderRadius: "10px", border: "none",
+                                            backgroundColor: "var(--color-secondary)", cursor: "pointer"
+                                        }}
+                                    >
+                                        Back
+                                    </button>
+                                    <button
+                                        onClick={confirmSettlement}
+                                        disabled={isSettling}
+                                        style={{ ...styles.addBtn, marginTop: 0, flex: 1 }}
+                                    >
+                                        {isSettling ? "Processing..." : "Mark as Paid"}
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>

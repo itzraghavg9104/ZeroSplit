@@ -9,6 +9,8 @@ import {
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import MobileNav from "@/components/layout/MobileNav";
+import { uploadToCloudinary } from "@/utils/upload";
+import { useRef } from "react";
 
 export default function ProfilePage() {
     const router = useRouter();
@@ -26,6 +28,24 @@ export default function ProfilePage() {
         ifscCode: "",
     });
     const [isLoading, setIsLoading] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsUploading(true);
+        try {
+            const imageUrl = await uploadToCloudinary(file);
+            await updateProfile({ profilePicture: imageUrl });
+        } catch (error) {
+            console.error("Error uploading image:", error);
+            alert("Failed to upload image. Please try again.");
+        } finally {
+            setIsUploading(false);
+        }
+    };
 
     useEffect(() => {
         if (user) {
@@ -141,6 +161,10 @@ export default function ProfilePage() {
             alignItems: "center",
             justifyContent: "center",
             cursor: "pointer",
+            overflow: "hidden", // for input
+        },
+        fileInput: {
+            display: "none",
         },
         userName: {
             fontSize: "20px",
@@ -173,7 +197,7 @@ export default function ProfilePage() {
         },
         tabActive: {
             backgroundColor: "#0095F6",
-            borderColor: "#0095F6",
+            border: "1px solid #0095F6",
             color: "white",
         },
         section: {
@@ -296,10 +320,29 @@ export default function ProfilePage() {
 
                 <div style={styles.profileSection}>
                     <div style={styles.avatar}>
-                        {user.firstName?.[0] || user.email?.[0]?.toUpperCase() || "U"}
-                        <button style={styles.cameraBtn}>
-                            <Camera size={14} color="var(--color-foreground)" />
+                        {user.profilePicture ? (
+                            <img
+                                src={user.profilePicture}
+                                alt="Profile"
+                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                            />
+                        ) : (
+                            user.firstName?.[0] || user.email?.[0]?.toUpperCase() || "U"
+                        )}
+                        <button style={styles.cameraBtn} onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+                            {isUploading ? (
+                                <div style={{ width: "12px", height: "12px", border: "2px solid var(--color-foreground)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+                            ) : (
+                                <Camera size={14} color="var(--color-foreground)" />
+                            )}
                         </button>
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            style={styles.fileInput}
+                            accept="image/*"
+                            onChange={handleFileChange}
+                        />
                     </div>
                     <p style={styles.userName}>
                         {user.firstName} {user.lastName}

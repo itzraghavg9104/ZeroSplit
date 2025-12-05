@@ -8,6 +8,8 @@ import { collection, addDoc, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import MobileNav from "@/components/layout/MobileNav";
+import { uploadToCloudinary } from "@/utils/upload";
+import { useRef } from "react";
 
 function generateInviteCode(): string {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -28,9 +30,30 @@ export default function CreateGroupPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState("");
 
+    const [isUploading, setIsUploading] = useState(false);
+    const [groupImage, setGroupImage] = useState("");
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
         setError("");
+    };
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsUploading(true);
+        setError("");
+        try {
+            const imageUrl = await uploadToCloudinary(file);
+            setGroupImage(imageUrl);
+        } catch (error) {
+            console.error("Error uploading image:", error);
+            setError("Failed to upload image. Please try again.");
+        } finally {
+            setIsUploading(false);
+        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -71,6 +94,7 @@ export default function CreateGroupPage() {
                 createdBy: user.id,
                 inviteCode: inviteCode,
                 currency: user.currency || "INR",
+                image: groupImage || null,
                 createdAt: Timestamp.now(),
                 updatedAt: Timestamp.now(),
             };
@@ -258,9 +282,27 @@ export default function CreateGroupPage() {
 
                 <div style={styles.card}>
                     <div style={styles.imageUpload}>
-                        <button style={styles.uploadBtn} type="button">
-                            <ImagePlus size={24} />
+                        <button
+                            style={styles.uploadBtn}
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isUploading}
+                        >
+                            {isUploading ? (
+                                <div style={{ width: "24px", height: "24px", border: "2px solid var(--color-muted)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+                            ) : groupImage ? (
+                                <img src={groupImage} alt="Group" style={{ width: "100%", height: "100%", borderRadius: "18px", objectFit: "cover" }} />
+                            ) : (
+                                <ImagePlus size={24} />
+                            )}
                         </button>
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            style={{ display: "none" }}
+                            accept="image/*"
+                            onChange={handleFileChange}
+                        />
                         <div style={styles.uploadText}>
                             <p style={styles.uploadTitle}>Group Photo</p>
                             <p style={styles.uploadDesc}>Add a photo to make your group recognizable</p>

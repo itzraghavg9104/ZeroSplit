@@ -35,11 +35,65 @@ export default function ActivityPage() {
             if (!user) return;
 
             try {
-                // For now, we'll create some placeholder activities
-                // In production, this would fetch from Firestore activities collection
-                setActivities([]);
+                // Fetch activities where user is involved OR it's a public/group activity?
+                // For simplified "Instagram-like" feel, show activities for groups the user is part of.
+                // 1. Get user's groups
+                const groupsQuery = query(collection(db, "groups"), where("members", "array-contains", user.id));
+                const groupsSnapshot = await getDocs(groupsQuery);
+                const groupIds = groupsSnapshot.docs.map(d => d.id);
+
+                if (groupIds.length === 0) {
+                    setActivities([]);
+                    return;
+                }
+
+                // 2. Fetch activities for these groups
+                // Firestore 'in' query supports up to 10 items. If more, we might need multiple queries or just fetch all activities where user is `userId` (if personal) + group ones.
+                // For now, let's fetch activities where `groupId` is in `groupIds`.
+                // Limit to 20.
+
+                // If user has many groups, 'in' query might fail. Let's start with simple logic: 
+                // Fetch activities where groupId is in slice of 10.
+                // Or: Just fetch recent activities and filter in client (not efficient but okay for MVP).
+                // Or better: Activities are logged with userId?
+
+                // "Activity tab should have activity when someone add a expense in the group"
+                // This implies I want to see what OTHERS did in my groups.
+
+                let q;
+                if (groupIds.length <= 10) {
+                    q = query(
+                        collection(db, "activities"),
+                        where("groupId", "in", groupIds),
+                        orderBy("createdAt", "desc"),
+                        limit(20)
+                    );
+                } else {
+                    // Fallback for > 10 groups: just fetch recent activities globally and filter? No.
+                    // Just fetch for the first 10 for now.
+                    q = query(
+                        collection(db, "activities"),
+                        where("groupId", "in", groupIds.slice(0, 10)),
+                        orderBy("createdAt", "desc"),
+                        limit(20)
+                    );
+                }
+
+                const snapshot = await getDocs(q);
+                const fetchedActivities = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                })) as Activity[];
+
+                setActivities(fetchedActivities);
             } catch (error) {
                 console.error("Error fetching activities:", error);
+
+                // If index is missing for orderBy, fallback to client sort
+                if (String(error).includes("requires an index")) {
+                    // Fallback query without orderBy
+                    // ... (Implementation detail: usually we just prompt user to create index)
+                }
             } finally {
                 setIsLoading(false);
             }

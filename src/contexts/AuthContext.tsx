@@ -14,6 +14,11 @@ import {
     onAuthStateChanged,
     GoogleAuthProvider,
     signInWithPopup,
+    sendEmailVerification,
+    sendPasswordResetEmail,
+    updatePassword as firebaseUpdatePassword,
+    reauthenticateWithCredential,
+    EmailAuthProvider,
     User as FirebaseUser,
 } from "firebase/auth";
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
@@ -34,6 +39,9 @@ interface AuthContextType {
     signInWithGoogle: () => Promise<void>;
     signOut: () => Promise<void>;
     updateProfile: (data: Partial<User>) => Promise<void>;
+    sendVerificationEmail: () => Promise<void>;
+    resetPassword: (email: string) => Promise<void>;
+    updateUserPassword: (password: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -129,6 +137,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             };
             await setDoc(doc(db, "users", credential.user.uid), newUser);
             setUser({ id: credential.user.uid, ...newUser });
+
+            // Send verification email
+            await sendEmailVerification(credential.user);
         } catch (err) {
             const message = (err as Error).message;
             if (message.includes("offline")) {
@@ -206,6 +217,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     };
 
+    const sendVerificationEmail = async () => {
+        if (!auth.currentUser) throw new Error("No user logged in");
+        await sendEmailVerification(auth.currentUser);
+    };
+
+    const resetPassword = async (email: string) => {
+        await sendPasswordResetEmail(auth, email);
+    };
+
+    const updateUserPassword = async (password: string) => {
+        if (!auth.currentUser) throw new Error("No user logged in");
+        await firebaseUpdatePassword(auth.currentUser, password);
+    };
+
     return (
         <AuthContext.Provider
             value={{
@@ -218,6 +243,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 signInWithGoogle,
                 signOut,
                 updateProfile,
+                sendVerificationEmail,
+                resetPassword,
+                updateUserPassword,
             }}
         >
             {children}

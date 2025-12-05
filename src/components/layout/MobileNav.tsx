@@ -58,6 +58,19 @@ export default function MobileNav() {
         setIsMenuOpen(false);
     }, [pathname]);
 
+    // Show nav on landing page too, per user request
+    const showBottomNav = !isDesktop && (
+        pathname === "/dashboard" ||
+        pathname === "/groups" ||
+        pathname === "/create-group" ||
+        pathname === "/activity" ||
+        pathname === "/profile" ||
+        pathname === "/settings" ||
+        pathname === "/" // Landing page
+    );
+
+    const isLandingPage = pathname === "/";
+
     const toggleTheme = () => {
         if (theme === "system") {
             setTheme(resolvedTheme === "dark" ? "light" : "dark");
@@ -103,7 +116,7 @@ export default function MobileNav() {
                         src="/logoFull.png"
                         alt="ZeroSplit"
                         style={{
-                            height: "28px",
+                            height: "32px",
                             width: "auto",
                             filter: logoFilter,
                         }}
@@ -291,7 +304,11 @@ export default function MobileNav() {
                     {user && (
                         <div style={{ padding: "16px 20px", borderTop: "1px solid var(--color-border)" }}>
                             <button
-                                onClick={() => signOut()}
+                                onClick={async () => {
+                                    await signOut();
+                                    // Use window.location for hard redirect to clear state/cache if needed, or router
+                                    window.location.href = "/";
+                                }}
                                 style={{
                                     width: "100%",
                                     display: "flex",
@@ -317,7 +334,7 @@ export default function MobileNav() {
             )}
 
             {/* Bottom Navigation - Instagram Style */}
-            {!isDesktop && (
+            {showBottomNav && (
                 <nav
                     style={{
                         position: "fixed",
@@ -325,18 +342,71 @@ export default function MobileNav() {
                         left: 0,
                         right: 0,
                         height: "60px",
-                        backgroundColor: "var(--color-background)",
-                        borderTop: "1px solid var(--color-border)",
+                        backgroundColor: isLandingPage ? "transparent" : "var(--color-background)",
+                        borderTop: isLandingPage ? "none" : "1px solid var(--color-border)",
+                        backdropFilter: isLandingPage ? "blur(10px)" : "none",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-around",
                         paddingBottom: "env(safe-area-inset-bottom)",
                         zIndex: 100,
+                        transition: "background-color 0.3s",
                     }}
                 >
                     {bottomNavItems.map((item) => {
                         const isActive = pathname === item.href ||
                             (item.href === "/dashboard" && pathname === "/");
+
+                        // If user is not logged in, redirect non-public routes to login?
+                        // Or just let them click and middleware/page auth will handle it.
+                        // Ideally, we keep it simple. Landing page links to dashboard/login.
+
+                        // Special case for Profile Icon
+                        if (item.label === "Profile") {
+                            return (
+                                <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    style={{
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        gap: "4px",
+                                        minWidth: "60px",
+                                        color: isActive ? "#0095F6" : "var(--color-muted)",
+                                    }}
+                                >
+                                    {userAvatar ? (
+                                        <div style={{
+                                            width: "26px",
+                                            height: "26px",
+                                            borderRadius: "50%",
+                                            overflow: "hidden",
+                                            border: isActive ? "2px solid #0095F6" : "1px solid var(--color-border)",
+                                            padding: "1px"
+                                        }}>
+                                            <img src={userAvatar} alt="Profile" style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }} />
+                                        </div>
+                                    ) : (
+                                        <item.icon
+                                            size={26}
+                                            strokeWidth={isActive ? 2.5 : 1.5}
+                                        />
+                                    )}
+                                    <span style={{
+                                        fontSize: "10px",
+                                        fontWeight: isActive ? "600" : "400",
+                                        color: isLandingPage && !isActive ? "rgba(255,255,255,0.8)" : undefined // Tweak for landing page visibility if dark bg?
+                                        // Actually landing page is light/dark theme aware. Text color should be fine from 'var(--color-muted)' 
+                                        // UNLESS landing page has a specific background image/color that requires contrast.
+                                        // The user said "ensure that below toolbar is also transparent on landing page".
+                                    }}>
+                                        {item.label}
+                                    </span>
+                                </Link>
+                            )
+                        }
 
                         // Center Plus Button
                         if (item.isCenter) {

@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://zerosplit.vercel.app/sitemap.xml
