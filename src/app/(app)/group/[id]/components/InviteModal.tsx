@@ -341,16 +341,54 @@ export default function InviteModal({ isOpen, onClose, group, user, groupId }: I
                     <div style={{ display: "flex", gap: "12px" }}>
                         <button style={styles.actionBtn} onClick={copyInviteLink}>
                             {copied ? <Check size={20} /> : <Copy size={20} />}
-                            <span>{copied ? "Copied!" : "Copy Link"}</span>
+                            <span>{copied ? "Copied Link!" : "Copy Link"}</span>
                         </button>
                         <button style={styles.actionBtnSecondary} onClick={handleShare}>
                             <Share2 size={20} />
                             <span>Share</span>
                         </button>
                     </div>
-                    <p style={{ marginTop: "12px", fontSize: "13px", color: "var(--color-muted)", textAlign: "center" }}>
-                        Code: <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{group.inviteCode}</span>
-                    </p>
+
+                    <div style={{ marginTop: "16px", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                        <p style={{ fontSize: "14px", color: "var(--color-muted)" }}>
+                            Code: <span style={{ fontFamily: "monospace", fontWeight: 700, fontSize: "16px", color: "var(--color-foreground)" }}>{group.inviteCode}</span>
+                        </p>
+                        <button
+                            onClick={() => {
+                                navigator.clipboard.writeText(group.inviteCode);
+                                // Start a temporary "Copied" state locally if needed, or just use alert/toast
+                                // Re-using 'copied' state might be confusing if they click both. 
+                                // Let's add specific feedback.
+                                const btn = document.getElementById("copy-code-btn");
+                                if (btn) {
+                                    const icon = btn.querySelector(".lucide-copy");
+                                    const check = btn.querySelector(".lucide-check");
+                                    if (icon && check) {
+                                        icon.setAttribute("style", "display: none");
+                                        check.setAttribute("style", "display: block");
+                                        setTimeout(() => {
+                                            icon.setAttribute("style", "display: block");
+                                            check.setAttribute("style", "display: none");
+                                        }, 2000);
+                                    }
+                                }
+                            }}
+                            id="copy-code-btn"
+                            style={{
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                padding: "4px",
+                                color: "var(--color-muted)",
+                                display: "flex",
+                                alignItems: "center"
+                            }}
+                            title="Copy Code"
+                        >
+                            <Copy size={16} className="lucide-copy" />
+                            <Check size={16} className="lucide-check" style={{ display: "none", color: "#22c55e" }} />
+                        </button>
+                    </div>
                 </div>
 
                 <div style={styles.divider}>

@@ -584,7 +584,7 @@ export default function GroupDetailsPage() {
             </main>
 
             <button
-                onClick={() => router.push(`/add-expense?groupId=${groupId}`)}
+                onClick={() => router.push(`/group/${groupId}/add-expense`)}
                 style={styles.fab}
             >
                 <Plus size={24} />
