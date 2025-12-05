@@ -36,6 +36,9 @@ export const metadata: Metadata = {
     description:
       "Split expenses with friends and minimize transactions with smart debt simplification.",
   },
+  verification: {
+    google: "rAAzIjmpK23zry0I96bgGY6d2jtjdDRuKsyloHFT4Gw",
+  },
 };
 
 export const viewport: Viewport = {
