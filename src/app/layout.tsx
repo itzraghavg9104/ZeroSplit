@@ -27,14 +27,46 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "ZeroSplit",
   },
+  keywords: [
+    "split expenses",
+    "bill splitting",
+    "group finance",
+    "debt simplification",
+    "expense tracker",
+    "ZeroSplit",
+    "shared expenses",
+    "roommate expenses",
+    "trip expenses",
+    "money manager",
+    "finance app"
+  ],
+  authors: [{ name: "Raghav Gupta", url: "https://zerosplit.vercel.app" }],
+  creator: "Raghav Gupta",
+  publisher: "ZeroSplit",
+  applicationName: "ZeroSplit",
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://zerosplit.app",
+    url: "https://zerosplit.vercel.app",
     siteName: "ZeroSplit",
     title: "ZeroSplit - Split Expenses Fairly",
     description:
       "Split expenses with friends and minimize transactions with smart debt simplification.",
+    images: [
+      {
+        url: "/logoFull.png", // Ensure this image exists in public folder or fallback to logoIcon
+        width: 1200,
+        height: 630,
+        alt: "ZeroSplit Preview",
+      }
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ZeroSplit - Split Expenses Fairly",
+    description: "Split expenses with friends and minimize transactions with smart debt simplification.",
+    creator: "Raghav Gupta",
+    images: ["/logoFull.png"],
   },
   verification: {
     google: "rAAzIjmpK23zry0I96bgGY6d2jtjdDRuKsyloHFT4Gw",

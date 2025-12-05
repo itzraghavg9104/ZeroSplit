@@ -191,7 +191,7 @@ export default function AboutPage() {
                 </div>
 
                 <div style={styles.logoSection}>
-                    <img src="/logoIcon.png" alt="ZeroSplit" style={styles.logo} />
+                    <img src="/logoIcon.png" alt="ZeroSplit" style={styles.logo} className="dark:invert" />
                     <p style={styles.appName}>ZeroSplit</p>
                     <p style={styles.tagline}>The easiest way to share expenses with friends and family.</p>
                 </div>
