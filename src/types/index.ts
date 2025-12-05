@@ -40,8 +40,8 @@ export interface Expense {
     splits: ExpenseSplit[];
     splitType: "equal" | "custom";
     createdBy: string;
-    createdAt: Date;
-    updatedAt: Date;
+    createdAt: Date | { toDate: () => Date }; // Firestore Timestamp compatible
+    updatedAt: Date | { toDate: () => Date };
 }
 
 export interface ExpenseSplit {

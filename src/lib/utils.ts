@@ -23,8 +23,17 @@ export function formatCurrency(amount: number, currency: string = 'INR'): string
     }).format(amount);
 }
 
-export function formatDate(date: Date | string): string {
-    const d = typeof date === 'string' ? new Date(date) : date;
+// Type for Firestore Timestamp compatibility
+type DateLike = Date | string | { toDate: () => Date };
+
+function toDate(date: DateLike): Date {
+    if (typeof date === 'string') return new Date(date);
+    if ('toDate' in date) return date.toDate();
+    return date;
+}
+
+export function formatDate(date: DateLike): string {
+    const d = toDate(date);
     return new Intl.DateTimeFormat('en-IN', {
         day: 'numeric',
         month: 'short',
@@ -32,8 +41,8 @@ export function formatDate(date: Date | string): string {
     }).format(d);
 }
 
-export function formatRelativeTime(date: Date | string): string {
-    const d = typeof date === 'string' ? new Date(date) : date;
+export function formatRelativeTime(date: DateLike): string {
+    const d = toDate(date);
     const now = new Date();
     const diff = now.getTime() - d.getTime();
 
