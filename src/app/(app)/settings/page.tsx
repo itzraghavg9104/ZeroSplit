@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ArrowLeft, Sun, Moon, Bell, Globe, Shield, HelpCircle, ChevronRight, Smartphone } from "lucide-react";
+import { ArrowLeft, Sun, Moon, Bell, Globe, Shield, HelpCircle, ChevronRight, Smartphone, Mail } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -10,7 +10,6 @@ import MobileNav from "@/components/layout/MobileNav";
 export default function SettingsPage() {
     const { theme, setTheme, resolvedTheme } = useTheme();
     const { user, updateProfile } = useAuth();
-    const [notifications, setNotifications] = useState(true);
     const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
     const [showCurrencyModal, setShowCurrencyModal] = useState(false);
     const [updatingCurrency, setUpdatingCurrency] = useState(false);
@@ -248,8 +247,6 @@ export default function SettingsPage() {
                         </div>
                     </div>
                 </div>
-
-
 
                 {/* Preferences */}
                 <div style={styles.section}>

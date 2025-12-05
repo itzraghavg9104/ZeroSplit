@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, Users, DollarSign, UserPlus, Check, Clock } from "lucide-react";
-import { collection, query, where, orderBy, limit, getDocs, Timestamp } from "firebase/firestore";
+import { collection, query, where, orderBy, limit, getDocs, Timestamp, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import MobileNav from "@/components/layout/MobileNav";
@@ -30,13 +30,13 @@ export default function ActivityPage() {
         }
     }, [user, loading, router]);
 
+    const [clearing, setClearing] = useState(false);
+
     useEffect(() => {
         const fetchActivities = async () => {
             if (!user) return;
 
             try {
-                // Fetch activities where user is involved OR it's a public/group activity?
-                // For simplified "Instagram-like" feel, show activities for groups the user is part of.
                 // 1. Get user's groups
                 const groupsQuery = query(collection(db, "groups"), where("members", "array-contains", user.id));
                 const groupsSnapshot = await getDocs(groupsQuery);
@@ -47,60 +47,89 @@ export default function ActivityPage() {
                     return;
                 }
 
-                // 2. Fetch activities for these groups
-                // Firestore 'in' query supports up to 10 items. If more, we might need multiple queries or just fetch all activities where user is `userId` (if personal) + group ones.
-                // For now, let's fetch activities where `groupId` is in `groupIds`.
-                // Limit to 20.
-
-                // If user has many groups, 'in' query might fail. Let's start with simple logic: 
-                // Fetch activities where groupId is in slice of 10.
-                // Or: Just fetch recent activities and filter in client (not efficient but okay for MVP).
-                // Or better: Activities are logged with userId?
-
-                // "Activity tab should have activity when someone add a expense in the group"
-                // This implies I want to see what OTHERS did in my groups.
-
+                // 2. Fetch activities
+                // Note: If index is missing, this might fail. Ensure composite index (groupId ASC, createdAt DESC).
+                // Querying logic:
                 let q;
                 if (groupIds.length <= 10) {
                     q = query(
                         collection(db, "activities"),
                         where("groupId", "in", groupIds),
                         orderBy("createdAt", "desc"),
-                        limit(20)
+                        limit(50)
                     );
                 } else {
-                    // Fallback for > 10 groups: just fetch recent activities globally and filter? No.
-                    // Just fetch for the first 10 for now.
                     q = query(
                         collection(db, "activities"),
                         where("groupId", "in", groupIds.slice(0, 10)),
                         orderBy("createdAt", "desc"),
-                        limit(20)
+                        limit(50)
                     );
                 }
 
                 const snapshot = await getDocs(q);
-                const fetchedActivities = snapshot.docs.map(doc => ({
+                let fetchedActivities = snapshot.docs.map(doc => ({
                     id: doc.id,
                     ...doc.data()
                 })) as Activity[];
 
+                // Filter out cleared activities
+                if (user.activityClearedAt) {
+                    const clearedTime = user.activityClearedAt instanceof Timestamp ? user.activityClearedAt.toMillis() : 0;
+                    fetchedActivities = fetchedActivities.filter(a => {
+                        const t = a.createdAt instanceof Timestamp ? a.createdAt.toMillis() : 0;
+                        return t > clearedTime;
+                    });
+                }
+
                 setActivities(fetchedActivities);
             } catch (error) {
                 console.error("Error fetching activities:", error);
-
-                // If index is missing for orderBy, fallback to client sort
-                if (String(error).includes("requires an index")) {
-                    // Fallback query without orderBy
-                    // ... (Implementation detail: usually we just prompt user to create index)
-                }
             } finally {
                 setIsLoading(false);
             }
         };
 
         if (user) fetchActivities();
+
+        // Mark as read on unmount
+        return () => {
+            if (user) {
+                updateDoc(doc(db, "users", user.id), {
+                    lastReadActivityTime: Timestamp.now()
+                }).catch(err => console.error("Error updating read time:", err));
+            }
+        };
     }, [user]);
+
+    const handleClearActivity = async () => {
+        if (!user) return;
+        if (!confirm("Clear all activities?")) return;
+
+        setClearing(true);
+        try {
+            await updateDoc(doc(db, "users", user.id), {
+                activityClearedAt: Timestamp.now()
+            });
+            setActivities([]); // clear locally
+        } catch (error) {
+            console.error("Error clearing activity:", error);
+        } finally {
+            setClearing(false);
+        }
+    };
+
+    const formatTime = (timestamp: Date | Timestamp) => {
+        if (!timestamp) return "";
+        const date = timestamp instanceof Timestamp ? timestamp.toDate() : timestamp;
+        const now = new Date();
+        const diff = (now.getTime() - date.getTime()) / 1000; // seconds
+
+        if (diff < 60) return "Just now";
+        if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+        return `${Math.floor(diff / 86400)}d ago`;
+    };
 
     if (loading || !user) {
         return (
@@ -224,7 +253,14 @@ export default function ActivityPage() {
 
             <main style={styles.main}>
                 <div style={styles.header}>
-                    <h1 style={styles.title}>Activity</h1>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <h1 style={styles.title}>Activity</h1>
+                        {activities.length > 0 && (
+                            <button onClick={handleClearActivity} style={{ color: "var(--color-muted)", background: "none", border: "none", fontSize: "14px", cursor: "pointer" }}>
+                                Clear
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {isLoading ? (
@@ -249,16 +285,26 @@ export default function ActivityPage() {
                     <div style={styles.activityList}>
                         {activities.map((activity) => {
                             const Icon = getActivityIcon(activity.type);
+                            const lastRead = user?.lastReadActivityTime instanceof Timestamp ? user.lastReadActivityTime.toMillis() : 0;
+                            const activityTime = activity.createdAt instanceof Timestamp ? activity.createdAt.toMillis() : 0;
+                            const isUnread = activityTime > lastRead;
+
                             return (
-                                <div key={activity.id} style={styles.activityCard}>
+                                <div key={activity.id} style={{
+                                    ...styles.activityCard,
+                                    backgroundColor: isUnread ? "rgba(0, 149, 246, 0.05)" : "var(--color-card)",
+                                }}>
                                     <div style={styles.activityIcon}>
                                         <Icon size={20} color="#0095F6" />
                                     </div>
                                     <div style={styles.activityContent}>
-                                        <p style={styles.activityMessage}>{activity.message}</p>
+                                        <p style={{
+                                            ...styles.activityMessage,
+                                            fontWeight: isUnread ? 600 : 400
+                                        }}>{activity.message}</p>
                                         <p style={styles.activityTime}>
                                             <Clock size={12} style={{ marginRight: "4px", verticalAlign: "middle" }} />
-                                            Just now
+                                            {formatTime(activity.createdAt)}
                                         </p>
                                     </div>
                                 </div>

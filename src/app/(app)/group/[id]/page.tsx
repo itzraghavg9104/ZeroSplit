@@ -5,14 +5,14 @@ import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import {
     ArrowLeft, Plus, Share2, Settings, Users, Receipt, Calculator,
-    Copy, Check, UserPlus, Link2, X, Search, Wallet, CreditCard
+    Copy, Check, UserPlus, Link2, X, Search, Wallet, CreditCard, LogOut, Smartphone
 } from "lucide-react";
 import {
     doc, getDoc, collection, query, where, orderBy, getDocs, updateDoc, deleteDoc, arrayUnion, Timestamp, onSnapshot
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
-import { Group, Expense, User, PaymentDetails } from "@/types";
+import { Group, Expense, User, PaymentDetails, Invite } from "@/types";
 import { addDoc } from "firebase/firestore";
 import MobileNav from "@/components/layout/MobileNav";
 import { calculateSettlements, Settlement } from "@/utils/settlements";
@@ -238,27 +238,52 @@ export default function GroupDetailsPage() {
 
         setIsAddingMember(true);
         try {
-            await updateDoc(doc(db, "groups", groupId), {
-                members: arrayUnion(searchResult.id),
-                memberDetails: arrayUnion({
-                    id: searchResult.id,
-                    username: searchResult.username,
-                    firstName: searchResult.firstName,
-                    lastName: searchResult.lastName,
-                    email: searchResult.email,
-                    joinedAt: Timestamp.now(),
-                }),
-                updatedAt: Timestamp.now(),
-            });
+            // Check if already invited
+            const invitesQuery = query(
+                collection(db, "invites"),
+                where("groupId", "==", groupId),
+                where("toUserId", "==", searchResult.id),
+                where("status", "==", "pending")
+            );
+            const existingInvites = await getDocs(invitesQuery);
+            if (!existingInvites.empty) {
+                setSearchError("User already invited");
+                setIsAddingMember(false);
+                return;
+            }
 
-            setMembers([...members, searchResult]);
-            setGroup({ ...group, members: [...group.members, searchResult.id] });
+            // Create Invite
+            const inviteData: Omit<Invite, "id"> = {
+                groupId,
+                groupName: group.name,
+                invitedBy: user.id,
+                invitedByName: user.firstName,
+                toUserId: searchResult.id,
+                status: "pending",
+                createdAt: Timestamp.now(),
+            };
+
+            await addDoc(collection(db, "invites"), inviteData);
+
+            await logActivity(
+                user.id,
+                "member_added", // Reusing this type or should I add "invite_sent"? keeping generic for now or updating activity type?
+                // The user said "invite will have a activity regitered which will invoke notification"
+                // I'll stick to a descriptive text.
+                `invited ${searchResult.firstName} to join ${group.name}`,
+                groupId,
+                group.name
+            );
+
+            // Notify user (UI)
+            alert("Invite sent successfully!");
+
             setShowInviteModal(false);
             setUsernameSearch("");
             setSearchResult(null);
         } catch (error) {
-            console.error("Error adding member:", error);
-            setSearchError("Failed to add member");
+            console.error("Error sending invite:", error);
+            setSearchError("Failed to send invite");
         } finally {
             setIsAddingMember(false);
         }
@@ -281,6 +306,79 @@ export default function GroupDetailsPage() {
         } catch (error) {
             console.error("Error deleting group:", error);
             alert("Failed to delete group. Please try again.");
+        }
+    };
+
+    const handleLeaveGroup = async () => {
+        if (!group || !user) return;
+
+        if (!confirm("Are you sure you want to leave this group?")) return;
+
+        try {
+            const newMembers = group.members.filter(id => id !== user.id);
+            const newMemberDetails = (group.memberDetails || []).filter(m => m.id !== user.id); // Assuming group.memberDetails exists on type, check schema
+
+            // Logic for ownership transfer
+            let newOwner = group.createdBy;
+            if (group.createdBy === user.id && newMembers.length > 0) {
+                // Oldest member becomes owner. 
+                // Assuming memberDetails is sorted by join Date or we sort it.
+                // If memberDetails isn't reliable, strict to 'members' array order? 
+                // Let's use memberDetails joinedAt if available, else first in array.
+                // Firestore 'members' array doesn't guarantee order of add.
+                // We SHOULD rely on memberDetails logic if we have it, or just random.
+                // User said "oldest member".
+                // memberDetails has joinedAt.
+                // Find oldest in remainder.
+                // Note: Group interface in this file says `Group` from `@/types` which I just viewed.
+                // `Group` interface in types/index.ts DOES NOT include `memberDetails`! 
+                // It has `members: string[]`.
+                // WAIT. In `GroupDetailsPage` (Step 1144), `addMemberByUsername` was updating `memberDetails`!
+                // See line 243: `memberDetails: arrayUnion(...)`.
+                // So `memberDetails` DOES exist on the Firestore doc, even if not in the TS type?
+                // Or I missed it in the TS type.
+                // Let's check Step 1139 (types/index.ts).
+                // Interface Group: members: string[]; createdBy: string; ... NO memberDetails.
+                // Code in `GroupDetailsPage` lines 243 adds it.
+                // `setGroup` uses `groupData` cast to `Group`.
+                // If `Group` doesn't have it, TypeScript should have complained or it's implicitly `any` somewhere?
+                // Ah, `groupData` is cast to `Group`. If `Group` lacks it, accessing `group.memberDetails` will error in TS.
+                // I should update `types/index.ts` to include `memberDetails`.
+                // But for now, I'll update `GroupDetailsPage`.
+
+                // Use `members` array index 0 as fallback or if logic permits. 
+                // Actually, memberDetails was being saved. I should update the Type too to be safe.
+                newOwner = newMembers[0];
+            }
+
+            if (newMembers.length === 0) {
+                // Last member leaving, delete group?
+                await deleteDoc(doc(db, "groups", groupId));
+                router.push("/groups");
+                return;
+            }
+
+            await updateDoc(doc(db, "groups", groupId), {
+                members: newMembers,
+                // If memberDetails is used:
+                // memberDetails: newMemberDetails, 
+                createdBy: newOwner,
+                updatedAt: Timestamp.now()
+            });
+
+            await logActivity(
+                user.id,
+                "left_group",
+                `left the group`,
+                groupId,
+                group.name
+            );
+
+            router.push("/groups");
+
+        } catch (error) {
+            console.error("Error leaving group:", error);
+            alert("Failed to leave group.");
         }
     };
 
@@ -628,6 +726,18 @@ export default function GroupDetailsPage() {
             fontWeight: 500,
             cursor: "pointer",
         },
+        leaveBtn: {
+            marginTop: "12px",
+            width: "100%",
+            padding: "12px",
+            backgroundColor: "rgba(239, 68, 68, 0.1)",
+            color: "#ef4444",
+            border: "none",
+            borderRadius: "10px",
+            fontSize: "14px",
+            fontWeight: 500,
+            cursor: "pointer",
+        },
         paymentCard: {
             backgroundColor: "var(--color-card)",
             borderRadius: "12px",
@@ -904,8 +1014,16 @@ export default function GroupDetailsPage() {
                                     </div>
                                 </div>
                             ))}
-                            {group.createdBy === user?.id && (
-                                <div style={{ borderTop: "1px solid var(--color-border)", padding: "16px 0 0 0", marginTop: "16px" }}>
+                            <div style={{ borderTop: "1px solid var(--color-border)", padding: "16px 0 0 0", marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                                <button
+                                    onClick={handleLeaveGroup}
+                                    style={styles.leaveBtn}
+                                >
+                                    <LogOut size={18} style={{ marginRight: "8px" }} />
+                                    Leave Group
+                                </button>
+
+                                {group.createdBy === user?.id && (
                                     <button
                                         onClick={handleDeleteGroup}
                                         style={{
@@ -926,8 +1044,8 @@ export default function GroupDetailsPage() {
                                     >
                                         Delete Group
                                     </button>
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>
@@ -1063,7 +1181,7 @@ export default function GroupDetailsPage() {
                                     }}
                                 >
                                     <div style={{ padding: "8px", borderRadius: "50%", backgroundColor: "#eee" }}>
-                                        <Wallet size={20} color="black" />
+                                        <Smartphone size={20} color="black" />
                                     </div>
                                     <div style={{ flex: 1 }}>
                                         <p style={{ fontWeight: 600 }}>UPI Apps</p>

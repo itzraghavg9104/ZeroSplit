@@ -8,8 +8,21 @@ export interface User {
     profilePicture?: string;
     paymentDetails?: PaymentDetails;
     currency: string;
+    lastReadActivityTime?: Date | { toDate: () => Date };
+    activityClearedAt?: Date | { toDate: () => Date };
     createdAt: Date;
     updatedAt: Date;
+}
+
+export interface Invite {
+    id: string;
+    groupId: string;
+    groupName: string;
+    invitedBy: string;
+    invitedByName: string;
+    toUserId?: string; // If known, e.g. from search
+    status: 'pending' | 'accepted' | 'declined';
+    createdAt: Date | { toDate: () => Date };
 }
 
 export interface PaymentDetails {
@@ -29,6 +42,14 @@ export interface Group {
     inviteCode: string;
     createdAt: Date;
     updatedAt: Date;
+    memberDetails?: {
+        id: string;
+        username: string;
+        firstName: string;
+        lastName: string;
+        email: string;
+        joinedAt: any;
+    }[];
 }
 
 // Expense types

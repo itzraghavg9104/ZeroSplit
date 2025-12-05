@@ -342,9 +342,9 @@ export default function MobileNav() {
                         left: 0,
                         right: 0,
                         height: "60px",
-                        backgroundColor: isLandingPage ? "transparent" : "var(--color-background)",
+                        backgroundColor: isLandingPage ? "rgba(0,0,0,0.01)" : "var(--color-background)", // Almost fully transparent for events, or just transparent
                         borderTop: isLandingPage ? "none" : "1px solid var(--color-border)",
-                        backdropFilter: isLandingPage ? "blur(10px)" : "none",
+                        backdropFilter: "none",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-around",
