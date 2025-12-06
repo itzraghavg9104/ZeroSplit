@@ -43,30 +43,30 @@ export default function GroupSettingsModal({ isOpen, onClose, group }: GroupSett
         try {
             const batch = writeBatch(db);
 
-            // 1. Delete Group Document
-            const groupRef = doc(db, "groups", group.id);
-            batch.delete(groupRef);
-
-            // 2. Delete All Expenses
+            // 1. Delete All Expenses
             const expensesQuery = query(collection(db, "expenses"), where("groupId", "==", group.id));
             const expensesSnapshot = await getDocs(expensesQuery);
             expensesSnapshot.docs.forEach((doc) => {
                 batch.delete(doc.ref);
             });
 
-            // 3. Delete All Invites
+            // 2. Delete All Invites
             const invitesQuery = query(collection(db, "invites"), where("groupId", "==", group.id));
             const invitesSnapshot = await getDocs(invitesQuery);
             invitesSnapshot.docs.forEach((doc) => {
                 batch.delete(doc.ref);
             });
 
-            // 4. Delete All Activities
+            // 3. Delete All Activities
             const activitiesQuery = query(collection(db, "activities"), where("groupId", "==", group.id));
             const activitiesSnapshot = await getDocs(activitiesQuery);
             activitiesSnapshot.docs.forEach((doc) => {
                 batch.delete(doc.ref);
             });
+
+            // 4. Delete Group Document (Must be last so security rules checking group ownership don't fail)
+            const groupRef = doc(db, "groups", group.id);
+            batch.delete(groupRef);
 
             await batch.commit();
 

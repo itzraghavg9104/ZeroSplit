@@ -171,23 +171,48 @@ const DotGrid: React.FC<DotGridProps> = ({
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             const { x: px, y: py } = pointerRef.current;
+            const time = performance.now() / 1000; // Get time in seconds
 
             for (const dot of dotsRef.current) {
+                // Wave calculation
+                // Create a diagonal wave effect based on position and time
+                const wave = Math.sin(dot.cx * 0.002 + dot.cy * 0.002 + time * 0.5) * 0.5 + 0.5; // 0 to 1
+
+                // Vertical gentle float
+                const floatY = Math.sin(dot.cx * 0.01 + time * 0.5) * 2;
+
                 const ox = dot.cx + dot.xOffset;
-                const oy = dot.cy + dot.yOffset;
+                const oy = dot.cy + dot.yOffset + floatY;
                 const dx = dot.cx - px;
                 const dy = dot.cy - py;
                 const dsq = dx * dx + dy * dy;
 
-                let style = baseColor;
+                let r = baseRgb.r;
+                let g = baseRgb.g;
+                let b = baseRgb.b;
+                let alpha = 1;
+
+                // Apply interactive proximity glow/color
                 if (dsq <= proxSq) {
                     const dist = Math.sqrt(dsq);
                     const t = 1 - dist / proximity;
-                    const r = Math.round(baseRgb.r + (activeRgb.r - baseRgb.r) * t);
-                    const g = Math.round(baseRgb.g + (activeRgb.g - baseRgb.g) * t);
-                    const b = Math.round(baseRgb.b + (activeRgb.b - baseRgb.b) * t);
-                    style = `rgb(${r},${g},${b})`;
+                    r = Math.round(r + (activeRgb.r - r) * t);
+                    g = Math.round(g + (activeRgb.g - g) * t);
+                    b = Math.round(b + (activeRgb.b - b) * t);
                 }
+
+                // Apply Ambient Glowing Wave
+                // We brighten the color slightly based on the wave
+                // Mix a bit of active color based on wave
+                const waveIntensity = wave * 0.5; // decreased intensity slightly
+                r = Math.round(r + (activeRgb.r - r) * waveIntensity);
+                g = Math.round(g + (activeRgb.g - g) * waveIntensity);
+                b = Math.round(b + (activeRgb.b - b) * waveIntensity);
+
+                // Optional: modulate opacity/alpha for a breathing effect
+                // alpha = 0.8 + wave * 0.2; 
+
+                const style = `rgba(${r},${g},${b}, ${alpha})`;
 
                 ctx.save();
                 ctx.translate(ox, oy);
@@ -305,12 +330,36 @@ const DotGrid: React.FC<DotGridProps> = ({
         };
 
         const throttledMove = throttle(onMove, 50);
+
+        // Touch handling
+        const onTouchMove = (e: TouchEvent) => {
+            // Prevent scrolling when interacting with the background if needed
+            // e.preventDefault(); 
+            const touch = e.touches[0];
+            onMove({
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            } as MouseEvent);
+        };
+
+        const onTouchStart = (e: TouchEvent) => {
+            const touch = e.touches[0];
+            onClick({
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            } as MouseEvent);
+        };
+
         window.addEventListener('mousemove', throttledMove, { passive: true });
         window.addEventListener('click', onClick);
+        window.addEventListener('touchmove', onTouchMove, { passive: true });
+        window.addEventListener('touchstart', onTouchStart, { passive: true });
 
         return () => {
             window.removeEventListener('mousemove', throttledMove);
             window.removeEventListener('click', onClick);
+            window.removeEventListener('touchmove', onTouchMove);
+            window.removeEventListener('touchstart', onTouchStart);
         };
     }, [maxSpeed, speedTrigger, proximity, resistance, returnDuration, shockRadius, shockStrength]);
 
