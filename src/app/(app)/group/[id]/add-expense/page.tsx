@@ -499,6 +499,26 @@ export default function AddExpensePage() {
                     <div style={styles.card}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
                             <p style={{ ...styles.sectionTitle, marginBottom: 0 }}>Split between</p>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (selectedMembers.length === members.length) {
+                                        setSelectedMembers([]);
+                                    } else {
+                                        setSelectedMembers(members.map(m => m.id));
+                                    }
+                                }}
+                                style={{
+                                    background: "none",
+                                    border: "none",
+                                    color: "#0095F6",
+                                    fontSize: "14px",
+                                    fontWeight: 600,
+                                    cursor: "pointer",
+                                }}
+                            >
+                                {selectedMembers.length === members.length ? "Deselect All" : "Select All"}
+                            </button>
                         </div>
 
                         <div style={styles.splitToggle}>
