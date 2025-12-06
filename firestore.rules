@@ -20,7 +20,8 @@ service cloud.firestore {
     
     // Helper function to check if user is the group owner
     function isGroupOwner(groupId) {
-      return request.auth.uid == get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy;
+      // Ensure groupId is not null before checking
+      return groupId != null && request.auth.uid == get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy;
     }
     
     // ==================== USERS ====================
@@ -102,10 +103,11 @@ service cloud.firestore {
     
     // ==================== ACTIVITIES ====================
     match /activities/{activityId} {
-      // Users can read activities they're involved in
+      // Users can read activities they're involved in OR if it belongs to their group
       allow read: if isAuthenticated() 
-        && (request.auth.uid in resource.data.involvedUsers
-            || request.auth.uid == resource.data.userId);
+        && (request.auth.uid == resource.data.userId
+            || (resource.data.involvedUsers != null && request.auth.uid in resource.data.involvedUsers)
+            || (resource.data.groupId != null && isGroupMember(resource.data.groupId)));
       
       // System creates activities (via server or triggered by other writes)
       allow create: if isAuthenticated();
