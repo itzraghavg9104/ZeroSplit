@@ -6,7 +6,7 @@ import {
     ArrowLeft, Plus, Share2, Settings, Users, UserPlus, LogOut
 } from "lucide-react";
 import {
-    doc, getDoc, collection, query, where, getDocs, deleteDoc, updateDoc, onSnapshot, Timestamp
+    doc, getDoc, collection, query, where, getDocs, deleteDoc, updateDoc, onSnapshot, Timestamp, writeBatch
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { formatCurrency, formatRelativeTime, getInitials } from "@/lib/utils";
@@ -138,7 +138,43 @@ export default function GroupDetailsPage() {
             }
 
             if (newMembers.length === 0) {
+                // Cascading delete similar to GroupSettingsModal
+                const batch = writeBatch(db);
+
+                // 1. Delete All Expenses
+                const expensesQuery = query(collection(db, "expenses"), where("groupId", "==", groupId));
+                const expensesSnapshot = await getDocs(expensesQuery);
+                expensesSnapshot.docs.forEach((doc) => {
+                    batch.delete(doc.ref);
+                });
+
+                // 2. Delete All Invites
+                const invitesQuery = query(collection(db, "invites"), where("groupId", "==", groupId));
+                const invitesSnapshot = await getDocs(invitesQuery);
+                invitesSnapshot.docs.forEach((doc) => {
+                    batch.delete(doc.ref);
+                });
+
+                // 3. Delete All Activities
+                const activitiesQuery = query(collection(db, "activities"), where("groupId", "==", groupId));
+                const activitiesSnapshot = await getDocs(activitiesQuery);
+                activitiesSnapshot.docs.forEach((doc) => {
+                    batch.delete(doc.ref);
+                });
+
+                // 4. Delete All Settlements
+                const settlementsQuery = query(collection(db, "settlements"), where("groupId", "==", groupId));
+                const settlementsSnapshot = await getDocs(settlementsQuery);
+                settlementsSnapshot.docs.forEach((doc) => {
+                    batch.delete(doc.ref);
+                });
+
+                // Commit sub-collection deletes first
+                await batch.commit();
+
+                // 5. Delete Group Document
                 await deleteDoc(doc(db, "groups", groupId));
+
                 router.push("/groups");
                 return;
             }
