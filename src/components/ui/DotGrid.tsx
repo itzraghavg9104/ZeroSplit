@@ -79,7 +79,7 @@ function hexToRgb(hex: string) {
 }
 
 const DotGrid: React.FC<DotGridProps> = ({
-    dotSize = 10,
+    dotSize = 2,
     gap = 25,
     baseColor = '#5227FF',
     activeColor = '#5227FF',
@@ -204,7 +204,7 @@ const DotGrid: React.FC<DotGridProps> = ({
                 // Apply Ambient Glowing Wave
                 // We brighten the color slightly based on the wave
                 // Mix a bit of active color based on wave
-                const waveIntensity = wave * 0.5; // decreased intensity slightly
+                const waveIntensity = wave * 0.15; // Decreased intensity significantly as requested
                 r = Math.round(r + (activeRgb.r - r) * waveIntensity);
                 g = Math.round(g + (activeRgb.g - g) * waveIntensity);
                 b = Math.round(b + (activeRgb.b - b) * waveIntensity);

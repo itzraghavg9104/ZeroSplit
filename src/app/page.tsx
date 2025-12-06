@@ -278,7 +278,7 @@ export default function LandingPage() {
       gap: "32px", // Increased gap
     },
     footerLogo: {
-      height: "48px", // Larger logo
+      height: "64px", // Larger logo
       width: "auto",
       filter: logoFilter,
     },
@@ -515,9 +515,9 @@ export default function LandingPage() {
         <DotGrid
           baseColor={dotBaseColor}
           activeColor={dotActiveColor}
-          gap={32}
-          dotSize={4}
-          proximity={150}
+          gap={20}
+          dotSize={3}
+          proximity={100}
           shockRadius={200}
         />
       </div>
