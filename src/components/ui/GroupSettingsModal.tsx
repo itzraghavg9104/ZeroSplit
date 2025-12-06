@@ -64,11 +64,20 @@ export default function GroupSettingsModal({ isOpen, onClose, group }: GroupSett
                 batch.delete(doc.ref);
             });
 
-            // 4. Delete Group Document (Must be last so security rules checking group ownership don't fail)
-            const groupRef = doc(db, "groups", group.id);
-            batch.delete(groupRef);
+            // 4. Delete All Settlements
+            const settlementsQuery = query(collection(db, "settlements"), where("groupId", "==", group.id));
+            const settlementsSnapshot = await getDocs(settlementsQuery);
+            settlementsSnapshot.docs.forEach((doc) => {
+                batch.delete(doc.ref);
+            });
 
+            // Commit the batch for sub-collections first
+            // We do this BEFORE deleting the group so that 'isGroupOwner' security rules (which read the group doc) 
+            // will pass successfully. If we delete the group in the same batch, the 'get' call in rules might fail.
             await batch.commit();
+
+            // 5. Delete Group Document separately
+            await deleteDoc(doc(db, "groups", group.id));
 
             router.push("/groups");
         } catch (error) {
