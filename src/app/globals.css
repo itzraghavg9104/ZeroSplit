@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@variant dark (&:where(.dark, .dark *));
 
 /* Theme Configuration for Tailwind v4 */
 @theme {

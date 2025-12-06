@@ -245,6 +245,7 @@ const DotGrid: React.FC<DotGridProps> = ({
 
     useEffect(() => {
         const onMove = (e: MouseEvent) => {
+            if (!canvasRef.current) return;
             const now = performance.now();
             const pr = pointerRef.current;
             const dt = pr.lastTime ? now - pr.lastTime : 16;
@@ -298,7 +299,8 @@ const DotGrid: React.FC<DotGridProps> = ({
         };
 
         const onClick = (e: MouseEvent) => {
-            const rect = canvasRef.current!.getBoundingClientRect();
+            if (!canvasRef.current) return;
+            const rect = canvasRef.current.getBoundingClientRect();
             const cx = e.clientX - rect.left;
             const cy = e.clientY - rect.top;
             for (const dot of dotsRef.current) {
