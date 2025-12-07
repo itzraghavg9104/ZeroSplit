@@ -183,7 +183,7 @@ export default function SupportPage() {
                             Have a persistent issue or a feature suggestion? <br />
                             We'd love to hear from you.
                         </p>
-                        <a href="mailto:support@zerosplit.com?subject=ZeroSplit%20Support%20Request" style={styles.contactBtn}>
+                        <a href="mailto:contact.zerosplit@gmail.com?subject=ZeroSplit%20Support%20Request" style={styles.contactBtn}>
                             <Mail size={18} />
                             Email Us
                         </a>
