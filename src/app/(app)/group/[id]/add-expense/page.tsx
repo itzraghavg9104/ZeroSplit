@@ -1,24 +1,45 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, DollarSign, Check, Divide, Calculator } from "lucide-react";
-import { doc, getDoc, collection, addDoc, Timestamp } from "firebase/firestore";
+import { doc, getDoc, collection, addDoc, Timestamp, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
-import { Group, User } from "@/types";
+import { Expense, Group, User } from "@/types";
 import MobileNav from "@/components/layout/MobileNav";
 import { logActivity } from "@/utils/activity";
+import { splitEqually, validateCustomSplit } from "@/lib/algorithms";
+import { formatCurrency } from "@/lib/utils";
+
+const getCurrencySymbol = (currency: string) => {
+    switch (currency) {
+        case "USD":
+            return "$";
+        case "EUR":
+            return "€";
+        case "GBP":
+            return "£";
+        case "JPY":
+            return "¥";
+        default:
+            return currency === "INR" ? "₹" : currency;
+    }
+};
 
 export default function AddExpensePage() {
     const router = useRouter();
     const params = useParams();
+    const searchParams = useSearchParams();
     const groupId = params.id as string;
+    const expenseId = searchParams.get("expenseId");
+    const isEditing = Boolean(expenseId);
     const { user } = useAuth();
 
     const [group, setGroup] = useState<Group | null>(null);
     const [members, setMembers] = useState<User[]>([]);
+    const [existingExpense, setExistingExpense] = useState<Expense | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState("");
@@ -32,9 +53,18 @@ export default function AddExpensePage() {
     const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
     const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
 
+    const currencyCode = user?.currency || "INR";
+    const currencySymbol = getCurrencySymbol(currencyCode);
+    const selectedCustomTotal = selectedMembers.reduce((total, memberId) => {
+        return total + (parseFloat(customAmounts[memberId] || "0") || 0);
+    }, 0);
+
     useEffect(() => {
-        const fetchGroup = async () => {
+        const fetchData = async () => {
             if (!user) return;
+
+            setIsLoading(true);
+            setError("");
 
             try {
                 const groupDoc = await getDoc(doc(db, "groups", groupId));
@@ -44,42 +74,123 @@ export default function AddExpensePage() {
                 }
 
                 const groupData = { id: groupDoc.id, ...groupDoc.data() } as Group;
-                setGroup(groupData);
-                setFormData(prev => ({ ...prev, payerId: user.id }));
+                if (!groupData.members.includes(user.id)) {
+                    setError("You no longer have access to this group.");
+                    return;
+                }
 
-                // Fetch members
+                setGroup(groupData);
+
                 const memberDocs = await Promise.all(
                     groupData.members.map((id) => getDoc(doc(db, "users", id)))
                 );
                 const membersData = memberDocs
-                    .filter((d) => d.exists())
-                    .map((d) => ({ id: d.id, ...d.data() } as User));
+                    .filter((memberDoc) => memberDoc.exists())
+                    .map((memberDoc) => ({ id: memberDoc.id, ...memberDoc.data() } as User));
+
                 setMembers(membersData);
-                // Default: Select all members
-                setSelectedMembers(membersData.map(m => m.id));
+
+                if (!expenseId) {
+                    setExistingExpense(null);
+                    setFormData({
+                        description: "",
+                        amount: "",
+                        payerId: user.id,
+                        splitType: "equal",
+                    });
+                    setSelectedMembers(membersData.map((member) => member.id));
+                    setCustomAmounts({});
+                    return;
+                }
+
+                const expenseDoc = await getDoc(doc(db, "expenses", expenseId));
+                if (!expenseDoc.exists()) {
+                    setError("Expense not found");
+                    return;
+                }
+
+                const expenseData = { id: expenseDoc.id, ...expenseDoc.data() } as Expense;
+
+                if (expenseData.groupId !== groupId) {
+                    setError("Expense not found in this group.");
+                    return;
+                }
+
+                if (expenseData.type === "settlement" || expenseData.isSettlement) {
+                    setError("Settlement records can't be edited.");
+                    return;
+                }
+
+                if (expenseData.createdBy !== user.id) {
+                    setError("Only the person who added this expense can edit it.");
+                    return;
+                }
+
+                const expenseCustomAmounts = expenseData.splits.reduce<Record<string, string>>(
+                    (acc, split) => {
+                        acc[split.memberId] = split.amount.toString();
+                        return acc;
+                    },
+                    {}
+                );
+
+                setExistingExpense(expenseData);
+                setFormData({
+                    description: expenseData.description,
+                    amount: expenseData.amount.toString(),
+                    payerId: expenseData.payerId,
+                    splitType: expenseData.splitType,
+                });
+                setSelectedMembers(expenseData.splits.map((split) => split.memberId));
+                setCustomAmounts(expenseCustomAmounts);
             } catch (err) {
-                console.error("Error fetching group:", err);
-                setError("Failed to load group. Please try again.");
+                console.error("Error loading expense form:", err);
+                setError("Failed to load expense details. Please try again.");
             } finally {
                 setIsLoading(false);
             }
         };
 
-        fetchGroup();
-    }, [user, groupId]);
+        fetchData();
+    }, [user, groupId, expenseId]);
 
     const handleCustomAmountChange = (memberId: string, value: string) => {
-        setCustomAmounts(prev => ({
+        setCustomAmounts((prev) => ({
             ...prev,
-            [memberId]: value
+            [memberId]: value,
         }));
+    };
+
+    const toggleMember = (memberId: string) => {
+        setSelectedMembers((prev) =>
+            prev.includes(memberId)
+                ? prev.filter((id) => id !== memberId)
+                : [...prev, memberId]
+        );
+    };
+
+    const switchToCustomSplit = () => {
+        const amount = parseFloat(formData.amount || "0");
+        if (amount > 0 && selectedMembers.length > 0) {
+            const equalSplits = splitEqually(amount, selectedMembers);
+            setCustomAmounts((prev) => {
+                const next = { ...prev };
+                equalSplits.forEach((split) => {
+                    if (!next[split.memberId]) {
+                        next[split.memberId] = split.amount.toString();
+                    }
+                });
+                return next;
+            });
+        }
+
+        setFormData((prev) => ({ ...prev, splitType: "custom" }));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user || !group) return;
 
-        console.log("Submitting expense form...");
+        if (!user || !group) return;
 
         const amount = parseFloat(formData.amount);
         if (!formData.description.trim()) {
@@ -90,87 +201,93 @@ export default function AddExpensePage() {
             setError("Please enter a valid amount");
             return;
         }
+        if (!formData.payerId) {
+            setError("Please select who paid");
+            return;
+        }
         if (selectedMembers.length === 0) {
             setError("Please select at least one member to split with");
             return;
         }
 
-        // Validate custom splits
-        let splits = [];
+        let splits = splitEqually(amount, selectedMembers);
+
         if (formData.splitType === "custom") {
-            let totalCustomAmount = 0;
-            const customSplits = [];
-
-            for (const memberId of selectedMembers) {
+            const customSplits = selectedMembers.map((memberId) => {
                 const memberAmount = parseFloat(customAmounts[memberId] || "0");
-                if (isNaN(memberAmount) || memberAmount < 0) {
-                    setError("Please enter valid amounts for all selected members");
-                    return;
-                }
-                totalCustomAmount += memberAmount;
-                customSplits.push({ memberId, amount: memberAmount });
-            }
 
-            // Allow a small margin of error for floating point math
-            if (Math.abs(totalCustomAmount - amount) > 0.05) {
-                const currencySymbol = user.currency === "USD" ? "$" : user.currency === "EUR" ? "€" : user.currency === "GBP" ? "£" : user.currency === "JPY" ? "¥" : "₹";
-                setError(`Total split amount (${currencySymbol}${totalCustomAmount.toFixed(2)}) must equal expense amount (${currencySymbol}${amount.toFixed(2)})`);
+                return {
+                    memberId,
+                    amount: memberAmount,
+                };
+            });
+
+            if (customSplits.some((split) => isNaN(split.amount) || split.amount < 0)) {
+                setError("Please enter valid amounts for all selected members");
                 return;
             }
+
+            const validation = validateCustomSplit(amount, customSplits);
+            if (!validation.valid) {
+                setError(validation.message || "Split amounts must match the expense amount");
+                return;
+            }
+
             splits = customSplits;
-        } else {
-            const splitAmount = amount / selectedMembers.length;
-            splits = selectedMembers.map(memberId => ({
-                memberId,
-                amount: splitAmount,
-            }));
         }
 
         setIsSaving(true);
         setError("");
 
         try {
-            const expenseData = {
-                groupId,
-                description: formData.description.trim(),
-                amount,
-                payerId: formData.payerId,
-                splits,
-                splitType: formData.splitType,
-                createdBy: user.id,
-                createdAt: Timestamp.now(),
-                updatedAt: Timestamp.now(),
-            };
+            if (isEditing && expenseId) {
+                await updateDoc(doc(db, "expenses", expenseId), {
+                    description: formData.description.trim(),
+                    amount,
+                    payerId: formData.payerId,
+                    splits,
+                    splitType: formData.splitType,
+                    updatedAt: Timestamp.now(),
+                });
 
-            console.log("Saving expense data:", expenseData);
+                await logActivity(
+                    user.id,
+                    "expense_updated",
+                    `updated "${formData.description.trim()}"`,
+                    groupId,
+                    group.name
+                );
+            } else {
+                const expenseData = {
+                    groupId,
+                    description: formData.description.trim(),
+                    amount,
+                    payerId: formData.payerId,
+                    splits,
+                    splitType: formData.splitType,
+                    createdBy: user.id,
+                    createdAt: Timestamp.now(),
+                    updatedAt: Timestamp.now(),
+                };
 
-            await addDoc(collection(db, "expenses"), expenseData);
+                await addDoc(collection(db, "expenses"), expenseData);
 
-            // Log Activity
-            await logActivity(
-                user.id,
-                "expense_added",
-                `added "${formData.description}"`,
-                groupId,
-                group.name
-            );
+                await logActivity(
+                    user.id,
+                    "expense_added",
+                    `added "${formData.description.trim()}"`,
+                    groupId,
+                    group.name
+                );
+            }
 
-            console.log("Expense saved successfully!");
             router.push(`/group/${groupId}`);
         } catch (err) {
-            console.error("Error adding expense:", err);
-            setError("Failed to add expense. Please try again.");
+            console.error("Error saving expense:", err);
+            setError(isEditing ? "Failed to update expense. Please try again." : "Failed to add expense. Please try again.");
         } finally {
             setIsSaving(false);
         }
-    };
-
-    const toggleMember = (memberId: string) => {
-        setSelectedMembers(prev =>
-            prev.includes(memberId)
-                ? prev.filter(id => id !== memberId)
-                : [...prev, memberId]
-        );
     };
 
     const styles = {
@@ -302,6 +419,7 @@ export default function AddExpensePage() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            flexShrink: 0,
         },
         checkIconSelected: {
             backgroundColor: "var(--color-foreground)",
@@ -387,15 +505,15 @@ export default function AddExpensePage() {
         );
     }
 
-    if (error && !group) {
+    if (error && (!group || (isEditing && !existingExpense))) {
         return (
             <div style={styles.page}>
                 <MobileNav />
                 <main style={styles.main}>
                     <div style={styles.error}>{error}</div>
-                    <Link href="/groups">
+                    <Link href={group ? `/group/${groupId}` : "/groups"}>
                         <button style={{ ...styles.submitBtn, marginTop: "16px" }}>
-                            Back to Groups
+                            Back
                         </button>
                     </Link>
                 </main>
@@ -414,7 +532,7 @@ export default function AddExpensePage() {
                             <ArrowLeft size={24} />
                         </button>
                     </Link>
-                    <h1 style={styles.title}>Add Expense</h1>
+                    <h1 style={styles.title}>{isEditing ? "Edit Expense" : "Add Expense"}</h1>
                 </div>
 
                 <form onSubmit={handleSubmit} style={styles.form}>
@@ -422,12 +540,12 @@ export default function AddExpensePage() {
 
                     <div style={styles.card}>
                         <div style={styles.inputGroup}>
-                            <label style={styles.label}>Amount ({user?.currency && user.currency !== "INR" ? (user.currency === "USD" ? "$" : user.currency === "EUR" ? "€" : user.currency === "GBP" ? "£" : user.currency === "JPY" ? "¥" : user.currency) : "₹"})</label>
+                            <label style={styles.label}>Amount ({currencySymbol})</label>
                             <input
                                 type="number"
                                 placeholder="0.00"
                                 value={formData.amount}
-                                onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
+                                onChange={(e) => setFormData((prev) => ({ ...prev, amount: e.target.value }))}
                                 onWheel={(e) => (e.target as HTMLElement).blur()}
                                 style={{ ...styles.input, ...styles.amountInput }}
                                 step="0.01"
@@ -442,7 +560,7 @@ export default function AddExpensePage() {
                                 type="text"
                                 placeholder="What was this expense for?"
                                 value={formData.description}
-                                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                                onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
                                 style={styles.input}
                                 required
                             />
@@ -457,12 +575,9 @@ export default function AddExpensePage() {
                                     key={member.id}
                                     style={{
                                         ...styles.payerOption,
-                                        ...(formData.payerId === member.id ? {
-                                            backgroundColor: "var(--color-card)",
-                                            border: "1px solid var(--color-foreground)"
-                                        } : {}),
+                                        ...(formData.payerId === member.id ? styles.payerOptionSelected : {}),
                                     }}
-                                    onClick={() => setFormData(prev => ({ ...prev, payerId: member.id }))}
+                                    onClick={() => setFormData((prev) => ({ ...prev, payerId: member.id }))}
                                 >
                                     {member.profilePicture ? (
                                         <img
@@ -481,11 +596,7 @@ export default function AddExpensePage() {
                                     </span>
                                     <div style={{
                                         ...styles.checkIcon,
-                                        ...(formData.payerId === member.id ? {
-                                            backgroundColor: "var(--color-foreground)",
-                                            border: "1px solid var(--color-foreground)",
-                                            color: "var(--color-background)"
-                                        } : {}),
+                                        ...(formData.payerId === member.id ? styles.checkIconSelected : {}),
                                     }}>
                                         {formData.payerId === member.id && (
                                             <Check size={12} color="var(--color-background)" strokeWidth={3} />
@@ -505,7 +616,7 @@ export default function AddExpensePage() {
                                     if (selectedMembers.length === members.length) {
                                         setSelectedMembers([]);
                                     } else {
-                                        setSelectedMembers(members.map(m => m.id));
+                                        setSelectedMembers(members.map((member) => member.id));
                                     }
                                 }}
                                 style={{
@@ -528,7 +639,7 @@ export default function AddExpensePage() {
                                     ...styles.toggleBtn,
                                     ...(formData.splitType === "equal" ? styles.toggleBtnActive : {}),
                                 }}
-                                onClick={() => setFormData(prev => ({ ...prev, splitType: "equal" }))}
+                                onClick={() => setFormData((prev) => ({ ...prev, splitType: "equal" }))}
                             >
                                 <Divide size={16} />
                                 Equally
@@ -539,7 +650,7 @@ export default function AddExpensePage() {
                                     ...styles.toggleBtn,
                                     ...(formData.splitType === "custom" ? styles.toggleBtnActive : {}),
                                 }}
-                                onClick={() => setFormData(prev => ({ ...prev, splitType: "custom" }))}
+                                onClick={switchToCustomSplit}
                             >
                                 <Calculator size={16} />
                                 Unequally
@@ -554,15 +665,7 @@ export default function AddExpensePage() {
                                         ...styles.payerOption,
                                         ...(selectedMembers.includes(member.id) ? styles.payerOptionSelected : {}),
                                     }}
-                                    onClick={() => {
-                                        if (formData.splitType === "equal") {
-                                            toggleMember(member.id);
-                                        }
-                                        // In custom mode, clicking row selects it, but input is separate
-                                        if (formData.splitType === "custom" && !selectedMembers.includes(member.id)) {
-                                            toggleMember(member.id);
-                                        }
-                                    }}
+                                    onClick={() => toggleMember(member.id)}
                                 >
                                     {member.profilePicture ? (
                                         <img
@@ -588,22 +691,21 @@ export default function AddExpensePage() {
                                                 <Check size={12} color="var(--color-background)" strokeWidth={3} />
                                             )}
                                         </div>
+                                    ) : selectedMembers.includes(member.id) ? (
+                                        <div onClick={(e) => e.stopPropagation()}>
+                                            <input
+                                                type="number"
+                                                placeholder="0"
+                                                value={customAmounts[member.id] || ""}
+                                                onChange={(e) => handleCustomAmountChange(member.id, e.target.value)}
+                                                style={styles.customAmountInput}
+                                                step="0.01"
+                                                min="0"
+                                                onWheel={(e) => (e.target as HTMLElement).blur()}
+                                            />
+                                        </div>
                                     ) : (
-                                        selectedMembers.includes(member.id) ? (
-                                            <div onClick={(e) => e.stopPropagation()}>
-                                                <input
-                                                    type="number"
-                                                    placeholder="0"
-                                                    value={customAmounts[member.id] || ""}
-                                                    onChange={(e) => handleCustomAmountChange(member.id, e.target.value)}
-                                                    style={styles.customAmountInput}
-                                                    step="0.01"
-                                                    onWheel={(e) => (e.target as HTMLElement).blur()}
-                                                />
-                                            </div>
-                                        ) : (
-                                            <div style={styles.checkIcon} onClick={() => toggleMember(member.id)} />
-                                        )
+                                        <div style={styles.checkIcon} />
                                     )}
                                 </div>
                             ))}
@@ -611,16 +713,17 @@ export default function AddExpensePage() {
 
                         {formData.splitType === "equal" && selectedMembers.length > 0 && formData.amount && (
                             <p style={{ marginTop: "12px", fontSize: "14px", color: "var(--color-muted)", textAlign: "center" }}>
-                                {user?.currency === "USD" ? "$" : user?.currency === "EUR" ? "€" : user?.currency === "GBP" ? "£" : user?.currency === "JPY" ? "¥" : "₹"}{(parseFloat(formData.amount) / selectedMembers.length).toFixed(2)} per person
+                                {currencySymbol}
+                                {(parseFloat(formData.amount) / selectedMembers.length).toFixed(2)} per person
                             </p>
                         )}
 
                         {formData.splitType === "custom" && (
                             <div style={{ marginTop: "12px", textAlign: "center" }}>
                                 <p style={{ fontSize: "14px", color: "var(--color-muted)" }}>
-                                    Total: ₹{Object.values(customAmounts).reduce((a, b) => a + (parseFloat(b) || 0), 0).toFixed(2)} / ₹{parseFloat(formData.amount || "0").toFixed(2)}
+                                    Total: {formatCurrency(selectedCustomTotal, currencyCode)} / {formatCurrency(parseFloat(formData.amount || "0"), currencyCode)}
                                 </p>
-                                {Math.abs(Object.values(customAmounts).reduce((a, b) => a + (parseFloat(b) || 0), 0) - parseFloat(formData.amount || "0")) > 0.05 && (
+                                {Math.abs(selectedCustomTotal - parseFloat(formData.amount || "0")) > 0.01 && (
                                     <p style={{ fontSize: "12px", color: "#ef4444", marginTop: "4px" }}>
                                         Amounts must match total
                                     </p>
@@ -644,12 +747,12 @@ export default function AddExpensePage() {
                                     borderRadius: "50%",
                                     animation: "spin 1s linear infinite",
                                 }} />
-                                Adding...
+                                {isEditing ? "Saving..." : "Adding..."}
                             </>
                         ) : (
                             <>
                                 <DollarSign size={18} />
-                                Add Expense
+                                {isEditing ? "Save Changes" : "Add Expense"}
                             </>
                         )}
                     </button>

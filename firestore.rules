@@ -70,8 +70,14 @@ service cloud.firestore {
         && isGroupMember(request.resource.data.groupId)
         && request.auth.uid == request.resource.data.createdBy;
       
-      // Expense creator or group members can update
-      allow update: if isAuthenticated() && isGroupMember(resource.data.groupId);
+      // Only the expense creator can edit an expense, and they can't reassign ownership/group
+      allow update: if isAuthenticated()
+        && isGroupMember(resource.data.groupId)
+        && request.auth.uid == resource.data.createdBy
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.groupId == resource.data.groupId
+        && (resource.data.type == null || resource.data.type == "expense")
+        && (request.resource.data.type == null || request.resource.data.type == "expense");
       
       // Only expense creator OR group owner can delete
       allow delete: if isAuthenticated() && (

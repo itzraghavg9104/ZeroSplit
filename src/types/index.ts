@@ -65,6 +65,7 @@ export interface Expense {
     createdAt: Date | { toDate: () => Date }; // Firestore Timestamp compatible
     updatedAt: Date | { toDate: () => Date };
     type?: 'expense' | 'settlement';
+    isSettlement?: boolean;
 }
 
 export interface ExpenseSplit {
